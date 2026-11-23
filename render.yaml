@@ -1,0 +1,22 @@
+# Render Blueprint: New > Blueprint > pick this repo.
+services:
+  - type: web
+    name: dreamjob
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: WEB_CONCURRENCY
+        value: "1"          # free plan has 512 MB RAM and 0.1 CPU
+      - key: ARBEITNOW_PAGES
+        value: "4"
+      - key: JSEARCH_API_KEY
+        sync: false
+      - key: ADZUNA_APP_ID
+        sync: false
+      - key: ADZUNA_APP_KEY
+        sync: false
+      - key: JOOBLE_API_KEY
+        sync: false

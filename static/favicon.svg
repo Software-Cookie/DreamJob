@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="DreamJob logo">
+  <title>DreamJob</title>
+  <rect width="120" height="120" rx="26" fill="#111827"/>
+  <!-- D, and the stem and hook of the J -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 32 V88 H34 C50 88 58 76 58 60 C58 44 50 32 34 32 H20"/>
+    <path d="M95 54 V74 C95 83 89 88 82 88 C75 88 70 84 68 77"/>
+  </g>
+  <!-- the top of the J is a check mark: the job found -->
+  <path d="M73 38 L84 50 L105 24" fill="none" stroke="#22C55E" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

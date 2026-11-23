@@ -1,0 +1,13 @@
+# Pings the live site so free hosts don't put it to sleep.
+# Add a repository variable SITE_URL (Settings > Secrets and variables > Actions > Variables).
+name: Keep alive
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    if: ${{ vars.SITE_URL != '' }}
+    steps:
+      - run: curl -fsS --max-time 60 "${{ vars.SITE_URL }}/api/health" || true

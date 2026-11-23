@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DreamJob – Jobs that match your résumé</title>
+  <meta name="description" content="Upload your résumé and DreamJob ranks recently posted jobs from 150+ company career sites and job boards by how well they fit you. Free, no sign-up.">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="color-scheme" content="light">
+  <meta property="og:title" content="DreamJob – Jobs that match your résumé">
+  <meta property="og:description" content="Recently posted jobs, ranked against your skills and experience.">
+  <meta property="og:image" content="/static/logo-512.png">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=5">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/" aria-label="DreamJob home">
+        <img src="/static/logo.svg" width="28" height="28" alt="">
+        <span>DreamJob</span>
+      </a>
+      <p class="index-status" id="indexStatus" aria-live="polite"></p>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ======================= search ======================= -->
+    <section class="search" id="searchView">
+      <h1>Find jobs that match your résumé</h1>
+      <p class="intro">Upload your résumé. DreamJob compares it with recent postings from company career sites and job boards, and ranks them by how well they fit you.</p>
+
+      <form class="card" id="searchForm" novalidate>
+        <div class="drop" id="drop" tabindex="0" role="button" aria-describedby="dropHint">
+          <input type="file" id="file" accept=".pdf,.docx,.txt,.md" hidden>
+          <svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          <p class="drop-title" id="dropTitle">Drag and drop your résumé, or <span class="link">browse</span></p>
+          <p class="drop-hint" id="dropHint">PDF, DOCX or TXT, up to 5 MB</p>
+        </div>
+        <button type="button" class="text-btn" id="pasteToggle" aria-expanded="false" aria-controls="pasteWrap">Paste text instead</button>
+        <div id="pasteWrap" hidden>
+          <label for="pasteText" class="sr-only">Résumé text</label>
+          <textarea id="pasteText" rows="7" placeholder="Paste the full text of your résumé"></textarea>
+        </div>
+
+        <div class="filters-form" data-filters="search"></div>
+
+        <p class="error" id="formError" role="alert" hidden></p>
+        <button type="submit" class="btn btn-primary btn-block" id="submitBtn">Find matching jobs</button>
+      </form>
+      <p class="sources-note" id="sourcesNote"></p>
+    </section>
+
+    <!-- ======================= loading ======================= -->
+    <section class="loading" id="loadingView" hidden aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="loadingText">Reading your résumé…</p>
+    </section>
+
+    <!-- ======================= results ======================= -->
+    <section id="resultsView" hidden>
+      <div class="filterbar">
+        <div class="filterbar-inner">
+          <div class="filters-bar" data-filters="results"></div>
+          <button type="button" class="btn btn-secondary" id="restartBtn">New résumé</button>
+        </div>
+      </div>
+
+      <div class="results-layout">
+        <div class="results">
+          <div class="results-head">
+            <h2 id="resultsTitle">Matching jobs</h2>
+            <p class="muted" id="resultsMeta"></p>
+            <p class="muted small" id="resultsSources"></p>
+          </div>
+          <p class="error" id="resultsError" role="alert" hidden></p>
+          <div class="updating" id="updating" hidden><span class="spinner spinner-sm" aria-hidden="true"></span>Updating results…</div>
+          <ol class="job-list" id="jobList"></ol>
+          <div class="empty" id="emptyState" hidden></div>
+        </div>
+
+        <aside class="side">
+          <section class="card side-card" aria-labelledby="profileTitle">
+            <h3 id="profileTitle">Your profile</h3>
+            <p class="muted small">Taken from your résumé. Edit it and update the results.</p>
+            <label class="field">
+              <span class="label">Target role</span>
+              <input id="roleInput" type="text" maxlength="80" placeholder="e.g. Data analyst">
+            </label>
+            <label class="field">
+              <span class="label">Years of experience</span>
+              <input id="yearsInput" type="number" min="0" max="50" step="0.5">
+            </label>
+            <div class="field">
+              <span class="label" id="skillsLabel">Skills <span class="muted" id="skillCount"></span></span>
+              <ul class="chips" id="skillChips" aria-labelledby="skillsLabel"></ul>
+              <form class="inline-form" id="addSkillForm">
+                <label for="addSkill" class="sr-only">Add a skill</label>
+                <input id="addSkill" list="skillList" placeholder="Add a skill" maxlength="60">
+                <datalist id="skillList"></datalist>
+                <button type="submit" class="btn btn-secondary">Add</button>
+              </form>
+            </div>
+            <button type="button" class="btn btn-primary btn-block" id="updateBtn">Update results</button>
+          </section>
+
+          <section class="card side-card" aria-labelledby="elsewhereTitle">
+            <h3 id="elsewhereTitle">Search other job sites</h3>
+            <p class="muted small" id="elsewhereHint">The same search, opened on each site with its own date filter.</p>
+            <ul class="ext-links" id="extLinks"></ul>
+          </section>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Jobs come from company career sites (via Greenhouse, Lever, Ashby and SmartRecruiters), Remotive, Remote OK, We Work Remotely, Jobicy, Working Nomads and Arbeitnow. Every job links to the original posting.</p>
+    <p>Your résumé is processed in memory and never stored.</p>
+  </footer>
+
+  <template id="filtersTpl">
+    <fieldset class="seg-group">
+      <legend class="label">Date posted</legend>
+      <div class="seg" data-name="window">
+        <label><input type="radio" value="24h"><span>24 hours</span></label>
+        <label><input type="radio" value="48h"><span>48 hours</span></label>
+        <label><input type="radio" value="72h"><span>72 hours</span></label>
+        <label><input type="radio" value="1w"><span>1 week</span></label>
+        <label><input type="radio" value="1m"><span>1 month</span></label>
+      </div>
+    </fieldset>
+    <label class="field field-top">
+      <span class="label">Show</span>
+      <select data-name="top">
+        <option value="3">Top 3</option>
+        <option value="10">Top 10</option>
+        <option value="20">Top 20</option>
+        <option value="30">Top 30</option>
+      </select>
+    </label>
+    <div class="field field-loc">
+      <span class="label">Location</span>
+      <div class="inline-form">
+        <input type="text" data-name="location" maxlength="80" placeholder="Any location" aria-label="Location">
+        <button type="button" class="btn btn-secondary" data-act="apply-location">Apply</button>
+      </div>
+    </div>
+    <label class="check">
+      <input type="checkbox" data-name="remote_only">
+      <span>Remote only</span>
+    </label>
+  </template>
+
+  <script src="/static/app.js?v=5" defer></script>
+</body>
+</html>

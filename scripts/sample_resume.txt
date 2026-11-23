@@ -1,0 +1,23 @@
+Priya Sharma
+Senior Backend Engineer
+Bengaluru, India | priya@example.com
+
+Summary
+Backend engineer with 6+ years of experience designing REST APIs and microservices in Python and Go.
+Comfortable owning services end to end: PostgreSQL schema design, Redis caching, Kafka pipelines,
+Docker and Kubernetes deployments on AWS, and CI/CD with GitHub Actions.
+
+Experience
+Senior Backend Engineer, Finlytics — Jan 2022 - Present
+- Built FastAPI and Django services handling 4k requests/second; cut p95 latency by 38%.
+- Led migration of batch ETL jobs to Kafka + Airflow; mentored 3 engineers.
+Software Engineer, Cartwheel Commerce — Jul 2018 - Dec 2021
+- Developed payment microservices in Go and Python; wrote Terraform for AWS (EC2, Lambda, S3).
+- Introduced pytest-based unit testing and Prometheus/Grafana monitoring.
+
+Skills
+Python, Go, SQL, FastAPI, Django, Flask, PostgreSQL, MySQL, Redis, Kafka, Airflow, Docker,
+Kubernetes, Terraform, AWS, GitHub Actions, Linux, Pytest, System Design, Agile
+
+Education
+B.Tech, Computer Science — VIT University, 2014 - 2018
