@@ -13,6 +13,7 @@ RUN pip install -r requirements.txt
 
 COPY app ./app
 COPY static ./static
+COPY extension ./extension
 
 # Hugging Face Spaces runs containers as uid 1000; the job snapshot is written to /app/data.
 RUN useradd -m -u 1000 user && mkdir -p /app/data && chown -R user:user /app

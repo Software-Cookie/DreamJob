@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DreamJob – Jobs that match your résumé</title>
-  <meta name="description" content="Upload your résumé and DreamJob ranks recently posted jobs from 150+ company career sites and job boards by how well they fit you. Free, no sign-up.">
+  <meta name="description" content="Upload your résumé and DreamJob ranks recently posted jobs from 180+ company career sites and job boards by how well they fit you. Free, no sign-up.">
   <meta name="theme-color" content="#ffffff">
   <meta name="color-scheme" content="light">
   <meta property="og:title" content="DreamJob – Jobs that match your résumé">
   <meta property="og:description" content="Recently posted jobs, ranked against your skills and experience.">
   <meta property="og:image" content="/static/logo-512.png">
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/styles.css?v=5">
+  <link rel="stylesheet" href="/static/styles.css?v=8">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -23,40 +23,138 @@
         <span>DreamJob</span>
       </a>
       <p class="index-status" id="indexStatus" aria-live="polite"></p>
+      <nav class="nav" aria-label="Main">
+        <a href="/#how" class="nav-hide-sm">How it works</a>
+        <a href="/autofill">Autofill</a>
+        <a href="/pricing" id="pricingLink" hidden>Pricing</a>
+        <button type="button" class="btn btn-secondary btn-sm" id="proBtn" hidden>Upgrade to Pro</button>
+        <span class="pro-badge" id="proBadge" hidden></span>
+      </nav>
     </div>
   </header>
 
   <main id="main">
-    <!-- ======================= search ======================= -->
-    <section class="search" id="searchView">
-      <h1>Find jobs that match your résumé</h1>
-      <p class="intro">Upload your résumé. DreamJob compares it with recent postings from company career sites and job boards, and ranks them by how well they fit you.</p>
+    <!-- ======================= landing + search ======================= -->
+    <div id="searchView">
+      <section class="hero">
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow anim" style="--d:0"><span class="live-dot" aria-hidden="true"></span><span id="heroLive">Live job index, refreshed every hour</span></p>
+            <h1 class="anim" style="--d:1">Stop searching.<br><span class="h1-accent">Start matching.</span></h1>
+            <p class="lead anim" style="--d:2">Upload your résumé once. DreamJob reads your skills and experience, scans thousands of newly posted roles from company career sites and job boards, and ranks the ones that genuinely fit you, with a clear reason for every match.</p>
+            <ul class="trust anim" style="--d:3">
+              <li>Free to use</li>
+              <li>No sign-up</li>
+              <li>Your résumé is never stored</li>
+            </ul>
+            <dl class="stats anim" style="--d:4">
+              <div><dt>Jobs indexed</dt><dd id="statJobs">–</dd></div>
+              <div><dt>Posted in the last 24 hours</dt><dd id="statToday">–</dd></div>
+              <div><dt>Company career sites</dt><dd id="statCompanies">–</dd></div>
+            </dl>
+          </div>
 
-      <form class="card" id="searchForm" novalidate>
-        <div class="drop" id="drop" tabindex="0" role="button" aria-describedby="dropHint">
-          <input type="file" id="file" accept=".pdf,.docx,.txt,.md" hidden>
-          <svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-          <p class="drop-title" id="dropTitle">Drag and drop your résumé, or <span class="link">browse</span></p>
-          <p class="drop-hint" id="dropHint">PDF, DOCX or TXT, up to 5 MB</p>
+          <form class="card search-card anim" style="--d:2" id="searchForm" novalidate aria-labelledby="formTitle">
+            <div class="card-head-row">
+              <h2 id="formTitle">Get your matches</h2>
+              <span class="muted small">Deep search · up to 20 seconds</span>
+            </div>
+            <div class="drop" id="drop" tabindex="0" role="button" aria-describedby="dropHint">
+              <input type="file" id="file" accept=".pdf,.docx,.txt,.md" hidden>
+              <svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+              <p class="drop-title" id="dropTitle">Drop your résumé here, or <span class="link">browse files</span></p>
+              <p class="drop-hint" id="dropHint">PDF, DOCX or TXT · up to 5 MB</p>
+            </div>
+            <button type="button" class="text-btn" id="pasteToggle" aria-expanded="false" aria-controls="pasteWrap">Paste résumé text instead</button>
+            <div id="pasteWrap" hidden>
+              <label for="pasteText" class="sr-only">Résumé text</label>
+              <textarea id="pasteText" rows="7" placeholder="Paste the full text of your résumé"></textarea>
+            </div>
+
+            <div class="filters-form" data-filters="search"></div>
+
+            <p class="error" id="formError" role="alert" hidden></p>
+            <button type="submit" class="btn btn-primary btn-block btn-arrow" id="submitBtn"><span>Show my matches</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+            <p class="sources-note" id="sourcesNote"></p>
+          </form>
         </div>
-        <button type="button" class="text-btn" id="pasteToggle" aria-expanded="false" aria-controls="pasteWrap">Paste text instead</button>
-        <div id="pasteWrap" hidden>
-          <label for="pasteText" class="sr-only">Résumé text</label>
-          <textarea id="pasteText" rows="7" placeholder="Paste the full text of your résumé"></textarea>
+      </section>
+
+      <section class="section" id="how" aria-labelledby="howTitle">
+        <div class="container">
+          <p class="kicker reveal">How it works</p>
+          <h2 class="section-title reveal" id="howTitle">From résumé to shortlist in three steps</h2>
+          <ol class="steps">
+            <li class="step reveal"><span class="step-num">01</span><h3>Upload your résumé</h3>
+              <p>PDF, Word or plain text. DreamJob identifies your skills, job titles and years of experience in seconds.</p></li>
+            <li class="step reveal"><span class="step-num">02</span><h3>Get a ranked shortlist</h3>
+              <p>Every recent opening is scored on skills, role fit, experience and wording, so the strongest matches rise to the top.</p></li>
+            <li class="step reveal"><span class="step-num">03</span><h3>Apply with confidence</h3>
+              <p>See exactly why each role fits and what's missing, then apply on the employer's site, with forms filled in one click.</p></li>
+          </ol>
         </div>
+      </section>
 
-        <div class="filters-form" data-filters="search"></div>
+      <section class="section section-alt" aria-labelledby="featTitle">
+        <div class="container">
+          <p class="kicker reveal">Why DreamJob</p>
+          <h2 class="section-title reveal" id="featTitle">Built to save you hours every week</h2>
+          <div class="features">
+            <article class="feature reveal">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              <h3>Only fresh openings</h3>
+              <p>Filter by the last 24, 48 or 72 hours, week or month. Every job shows its exact posting date, so you apply early.</p>
+            </article>
+            <article class="feature reveal">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg>
+              <h3>Transparent scoring</h3>
+              <p>A match score with its breakdown, an experience verdict and the skills you have or lack. No black box.</p>
+            </article>
+            <article class="feature reveal">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h7m9-3v6m-3-3h6"/></svg>
+              <h3>Unlimited skills</h3>
+              <p>Add every tool and specialism you know. Skills outside our library are matched against each full job description.</p>
+            </article>
+            <article class="feature reveal">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h10l4 4v12H5z"/><path d="m9 13 2 2 4-4"/></svg>
+              <h3>One-click applications</h3>
+              <p>The free autofill extension completes Workday, Greenhouse, Lever and other forms from your saved profile.</p>
+            </article>
+          </div>
+        </div>
+      </section>
 
-        <p class="error" id="formError" role="alert" hidden></p>
-        <button type="submit" class="btn btn-primary btn-block" id="submitBtn">Find matching jobs</button>
-      </form>
-      <p class="sources-note" id="sourcesNote"></p>
-    </section>
+      <section class="section" aria-labelledby="srcTitle">
+        <div class="container sources-band reveal">
+          <div>
+            <p class="kicker">Where the jobs come from</p>
+            <h2 class="section-title" id="srcTitle">Straight from the employers</h2>
+            <p class="muted">Roles come from the official career sites of companies hiring through Greenhouse, Lever, Ashby and SmartRecruiters, plus trusted job boards. Every listing links to the original posting.</p>
+          </div>
+          <ul class="logo-cloud" aria-label="Examples of companies">
+            <li>Stripe</li><li>Databricks</li><li>Snowflake</li><li>OpenAI</li><li>Freshworks</li><li>Anthropic</li>
+            <li>Paytm</li><li>MongoDB</li><li>Airbnb</li><li>Meesho</li><li>CRED</li><li>ServiceNow</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="cta-band">
+        <div class="container cta-inner reveal">
+          <div>
+            <h2>Ready to see where you fit?</h2>
+            <p>It takes about ten seconds and costs nothing.</p>
+          </div>
+          <a class="btn btn-light btn-lg" href="#searchForm" id="ctaBtn">Upload my résumé</a>
+        </div>
+      </section>
+    </div>
 
     <!-- ======================= loading ======================= -->
     <section class="loading" id="loadingView" hidden aria-live="polite">
-      <div class="spinner" aria-hidden="true"></div>
-      <p id="loadingText">Reading your résumé…</p>
+      <div class="loader" aria-hidden="true"><span></span><span></span><span></span></div>
+      <p class="loading-title" id="loadingText">Analysing your résumé…</p>
+      <p class="muted small">Matching your profile against thousands of recent openings</p>
     </section>
 
     <!-- ======================= results ======================= -->
@@ -64,19 +162,19 @@
       <div class="filterbar">
         <div class="filterbar-inner">
           <div class="filters-bar" data-filters="results"></div>
-          <button type="button" class="btn btn-secondary" id="restartBtn">New résumé</button>
+          <button type="button" class="btn btn-secondary" id="restartBtn">Upload another résumé</button>
         </div>
       </div>
 
       <div class="results-layout">
         <div class="results">
           <div class="results-head">
-            <h2 id="resultsTitle">Matching jobs</h2>
+            <h2 id="resultsTitle">Your matches</h2>
             <p class="muted" id="resultsMeta"></p>
             <p class="muted small" id="resultsSources"></p>
           </div>
           <p class="error" id="resultsError" role="alert" hidden></p>
-          <div class="updating" id="updating" hidden><span class="spinner spinner-sm" aria-hidden="true"></span>Updating results…</div>
+          <div class="updating" id="updating" hidden><span class="spinner spinner-sm" aria-hidden="true"></span>Refreshing your matches…</div>
           <ol class="job-list" id="jobList"></ol>
           <div class="empty" id="emptyState" hidden></div>
         </div>
@@ -84,7 +182,7 @@
         <aside class="side">
           <section class="card side-card" aria-labelledby="profileTitle">
             <h3 id="profileTitle">Your profile</h3>
-            <p class="muted small">Taken from your résumé. Edit it and update the results.</p>
+            <p class="muted small">Extracted from your résumé. Refine it to sharpen your matches.</p>
             <label class="field">
               <span class="label">Target role</span>
               <input id="roleInput" type="text" maxlength="80" placeholder="e.g. Data analyst">
@@ -94,21 +192,31 @@
               <input id="yearsInput" type="number" min="0" max="50" step="0.5">
             </label>
             <div class="field">
-              <span class="label" id="skillsLabel">Skills <span class="muted" id="skillCount"></span></span>
+              <div class="label-row">
+                <span class="label" id="skillsLabel">Skills <span class="muted" id="skillCount"></span></span>
+                <button type="button" class="text-btn small" id="clearSkills">Clear all</button>
+              </div>
               <ul class="chips" id="skillChips" aria-labelledby="skillsLabel"></ul>
               <form class="inline-form" id="addSkillForm">
-                <label for="addSkill" class="sr-only">Add a skill</label>
-                <input id="addSkill" list="skillList" placeholder="Add a skill" maxlength="60">
+                <label for="addSkill" class="sr-only">Add skills</label>
+                <input id="addSkill" list="skillList" placeholder="Add skills, separated by commas" maxlength="600" autocomplete="off">
                 <datalist id="skillList"></datalist>
                 <button type="submit" class="btn btn-secondary">Add</button>
               </form>
+              <p class="muted small hint">Add as many as you like. Skills outside our library are matched against each full job description.</p>
             </div>
-            <button type="button" class="btn btn-primary btn-block" id="updateBtn">Update results</button>
+            <button type="button" class="btn btn-primary btn-block" id="updateBtn">Apply changes</button>
+          </section>
+
+          <section class="card side-card" aria-labelledby="fillTitle">
+            <h3 id="fillTitle">Apply faster</h3>
+            <p class="muted small">DreamJob Autofill completes Workday, Greenhouse and Lever applications from your saved profile in one click. Free for Chrome and Edge.</p>
+            <a class="btn btn-secondary" href="/autofill">Get the extension</a>
           </section>
 
           <section class="card side-card" aria-labelledby="elsewhereTitle">
-            <h3 id="elsewhereTitle">Search other job sites</h3>
-            <p class="muted small" id="elsewhereHint">The same search, opened on each site with its own date filter.</p>
+            <h3 id="elsewhereTitle">Continue on other job sites</h3>
+            <p class="muted small" id="elsewhereHint">Your search, opened on each site with the matching date filter.</p>
             <ul class="ext-links" id="extLinks"></ul>
           </section>
         </aside>
@@ -117,9 +225,49 @@
   </main>
 
   <footer class="footer">
-    <p>Jobs come from company career sites (via Greenhouse, Lever, Ashby and SmartRecruiters), Remotive, Remote OK, We Work Remotely, Jobicy, Working Nomads and Arbeitnow. Every job links to the original posting.</p>
-    <p>Your résumé is processed in memory and never stored.</p>
+    <div class="container footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="/"><img src="/static/logo.svg" width="24" height="24" alt=""><span>DreamJob</span></a>
+        <p>Recently posted jobs, ranked against your skills and experience. Your résumé is processed in memory and never stored.</p>
+      </div>
+      <nav class="footer-links" aria-label="Footer">
+        <div><h4>Product</h4><a href="/#how">How it works</a><a href="/autofill">Autofill extension</a><a href="/pricing">Pricing</a></div>
+        <div><h4>Company</h4><a href="/contact">Contact</a><a href="/terms">Terms of service</a><a href="/privacy">Privacy policy</a><a href="/refunds">Refund policy</a></div>
+      </nav>
+    </div>
+    <div class="container footer-note">
+      <p>Sources: company career sites (Greenhouse, Lever, Ashby, SmartRecruiters), Remotive, Remote OK, We Work Remotely, Jobicy, Working Nomads, Arbeitnow and Hacker News. Every listing links to the original posting.</p>
+    </div>
   </footer>
+
+  <!-- ======================= DreamJob Pro ======================= -->
+  <dialog class="dialog" id="proDialog" aria-labelledby="proTitle">
+    <form method="dialog" class="dialog-close"><button class="icon-btn" aria-label="Close">×</button></form>
+    <div id="proBuy">
+      <h2 id="proTitle">DreamJob Pro</h2>
+      <p class="price-line"><b id="proPrice">₹99</b> <span class="muted" id="proDays">for 30 days</span></p>
+      <ul class="ticks">
+        <li id="proTopsLine">Top 20 and Top 30 matches per search</li>
+        <li>One-time payment, no automatic renewal</li>
+        <li>UPI, cards, net banking and wallets accepted</li>
+        <li>Full refund within 7 days, no questions asked</li>
+      </ul>
+      <p class="error" id="proError" role="alert" hidden></p>
+      <button type="button" class="btn btn-primary btn-block" id="payBtn" autofocus>Pay ₹99</button>
+      <p class="muted small center">Payments are processed securely by Razorpay. DreamJob never sees your card or UPI details.
+        <a href="/refunds" target="_blank" rel="noopener">Refund policy</a></p>
+      <button type="button" class="text-btn small" id="restoreToggle" aria-expanded="false" aria-controls="restoreForm">Already purchased? Restore access</button>
+      <form id="restoreForm" class="restore" hidden novalidate>
+        <label class="field"><span class="label">Payment ID (from your Razorpay receipt email)</span>
+          <input type="text" id="restoreId" placeholder="pay_XXXXXXXXXXXX" autocomplete="off" spellcheck="false" maxlength="64"></label>
+        <label class="field"><span class="label">Email you paid with</span>
+          <input type="email" id="restoreEmail" autocomplete="email" maxlength="254"></label>
+        <button type="submit" class="btn btn-secondary" id="restoreBtn">Restore</button>
+      </form>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <template id="filtersTpl">
     <fieldset class="seg-group">
@@ -152,8 +300,12 @@
       <input type="checkbox" data-name="remote_only">
       <span>Remote only</span>
     </label>
+    <label class="check" title="Hide roles that need far more, or far less, experience than you have">
+      <input type="checkbox" data-name="exp_match">
+      <span>Match my experience level</span>
+    </label>
   </template>
 
-  <script src="/static/app.js?v=5" defer></script>
+  <script src="/static/app.js?v=9" defer></script>
 </body>
 </html>

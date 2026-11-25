@@ -3,5 +3,22 @@ __pycache__/
 *.pyc
 .pytest_cache/
 data/
-.env
 docs/*.pdf
+
+# secrets: never commit real keys
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.crx
+secrets/
+
+# build output and editor clutter
+*.zip
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

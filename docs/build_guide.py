@@ -1,8 +1,10 @@
-"""Generates docs/DreamJob_Build_and_Production_Guide.pdf.
+"""Generates the DreamJob build and production guide (PDF).
 
     pip install reportlab
-    python docs/build_guide.py
+    python docs/build_guide.py                      # writes docs/DreamJob_Build_and_Production_Guide.pdf
+    python docs/build_guide.py "D:/some/folder"     # writes the PDF into that folder instead
 """
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -19,7 +21,7 @@ from reportlab.platypus import (Image, KeepTogether, PageBreak, Paragraph, Prefo
 
 ROOT = Path(__file__).resolve().parent
 ASSETS = ROOT / "assets"
-OUT = ROOT / "DreamJob_Build_and_Production_Guide.pdf"
+OUT = (Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT) / "DreamJob_Build_and_Production_Guide.pdf"
 
 INK = colors.HexColor("#111827")
 INK2 = colors.HexColor("#374151")
@@ -137,11 +139,11 @@ def architecture():
 
     # columns
     box(0, H - 62, 120, 56, "Browser", ["index.html, app.js", "upload + preferences", "renders ranked jobs"], fill=PAPER)
-    box(165, H - 75, 150, 70, "FastAPI app", ["POST /api/analyze", "POST /api/match", "rate limit, gzip, static", "uvicorn, 2 workers"], fill=INK, stroke=INK, tc=colors.white)
+    box(165, H - 75, 150, 70, "FastAPI app", ["/api/analyze, /api/match", "/api/pay/* (Razorpay)", "CSP, rate limit, gzip", "uvicorn workers"], fill=INK, stroke=INK, tc=colors.white)
     box(365, H - 62, 115, 56, "Résumé reader", ["pypdf / python-docx", "in memory only"])
     box(365, H - 130, 115, 56, "Profile builder", ["skills, titles,", "years, level, keywords"])
-    box(165, 8, 150, 92, "Job index (memory)", ["~8,000 jobs, last month", "pre-computed skills,", "titles, levels, TF-IDF", "disk snapshot for", "instant restarts"], fill=colors.HexColor("#F3F4F6"), stroke=INK3)
-    box(0, 8, 120, 92, "Job sources", ["~150 company career", "sites (hourly)", "6 job boards (30 min)", "optional: JSearch,", "Adzuna, Jooble"], fill=PAPER)
+    box(165, 8, 150, 92, "Job index (memory)", ["last month's jobs with", "full descriptions,", "skills, levels, TF-IDF", "one worker crawls,", "others read snapshot"], fill=colors.HexColor("#F3F4F6"), stroke=INK3)
+    box(0, 8, 120, 92, "Job sources", ["~186 company career", "sites (hourly)", "7 boards + Hacker News", "optional: JSearch,", "Adzuna, Jooble"], fill=PAPER)
     box(365, 8, 115, 70, "Matcher", ["filter by window,", "location, remote", "score 0-100 + reasons", "top 3/10/20/30"], fill=colors.HexColor("#F0FDF4"), stroke=MINT)
     # arrows
     arrow(120, H - 34, 165, H - 34, COBALT)
@@ -185,19 +187,24 @@ P("Build and Production Guide", "title")
 P("Everything about the project: what it does, how it was built, how it was tested, and a "
   "step-by-step plan to put it online for the public at zero cost.", "subtitle")
 SP(30)
-table([["Version", "1.1 (sources, date accuracy and UI update)"], ["Date", date.today().strftime("%d %B %Y")],
-       ["Running cost", "$0 per month (free tiers only)"],
+table([["Version", "2.0.0 (autofill extension, Razorpay payments, full descriptions, unlimited skills, more sources)"],
+       ["Date", date.today().strftime("%d %B %Y")],
+       ["Running cost", "$0 per month (free tiers only). Razorpay charges only a fee per successful payment"],
        ["Recommended host", "Hugging Face Spaces (free CPU: 2 vCPU, 16 GB RAM)"],
-       ["Stack", "Python 3.12, FastAPI, plain HTML/CSS/JS, Docker"]], [45 * mm, 120 * mm], header=False)
+       ["Repository", "github.com/Software-Cookie/DreamJob"],
+       ["Stack", "Python 3.12, FastAPI, plain HTML/CSS/JS, Chrome/Edge extension (Manifest V3), Razorpay, Docker"]],
+      [45 * mm, 120 * mm], header=False)
 story.append(PageBreak())
 
 # ---------------------------------------------------------------- contents
 H1("Contents")
 toc = [
     ("1", "What DreamJob is"), ("2", "The logo and visual identity"), ("3", "How it was built"),
-    ("4", "Quality, speed and capacity: test results"), ("5", "Going live: step-by-step production guide"),
-    ("6", "After launch: monitoring, upkeep and troubleshooting"), ("7", "Known limitations"),
-    ("8", "Next steps and roadmap"), ("9", "Cost summary"), ("10", "What changed in version 1.1"),
+    ("4", "The autofill extension (Workday and other application forms)"),
+    ("5", "Payments with Razorpay: complete setup"),
+    ("6", "Quality, speed and capacity: test results"), ("7", "Going live: step-by-step production guide"),
+    ("8", "After launch: monitoring, upkeep and troubleshooting"), ("9", "Known limitations"),
+    ("10", "Next steps and roadmap"), ("11", "Cost summary"), ("12", "What changed in versions 1.1 and 2.0"),
 ]
 table([["Part", "Section"]] + [list(r) for r in toc], [18 * mm, 150 * mm])
 story.append(PageBreak())
@@ -215,22 +222,27 @@ bullets([
     "Choose how recent the jobs must be: <b>last 24 hours, 48 hours, 72 hours, 1 week or 1 month</b>.",
     "Choose how many results to see: <b>top 3, 10, 20 or 30</b>.",
     "Optionally filter by <b>location</b> (e.g. India, Berlin, USA) and <b>remote only</b>.",
-    "See for each job: a <b>match score (0-100%)</b>, plain-language reasons, the skills they match "
-    "(highlighted), the skills the job also asks for (a learning list), salary when published, and a link to apply.",
-    "Correct the profile (role, years, add or remove skills) and change filters: results update instantly "
-    "without uploading again.",
-    "Open the same search on <b>LinkedIn, Indeed, Naukri, Glassdoor and Google Jobs</b> with one click, with the "
-    "role, location and date filter already applied.",
+    "See for each job: a <b>match score (0-100%)</b>, plain-language reasons, an <b>experience verdict</b> "
+    "(\"Asks for 3-5 years of experience; you have about 4\"), the skills they match, the skills the job also asks for "
+    "(a learning list), a <b>score breakdown</b>, the <b>full job description</b>, salary when published, and a link to apply.",
+    "Correct the profile (role, years, skills) and change filters: results update instantly without uploading again. "
+    "<b>Add as many skills as you like</b>, several at once separated by commas; skills DreamJob doesn't know are "
+    "matched against each job's full description.",
+    "Open the same search on <b>LinkedIn, Indeed, Naukri, Glassdoor, Google Jobs and Wellfound</b> with one click.",
+    "Install the free <b>DreamJob Autofill</b> extension, save the profile once, and fill Workday, Greenhouse, Lever and "
+    "other application forms in one click (section 4).",
+    "Optionally buy <b>DreamJob Pro</b> (Top 20 and Top 30) with UPI, card, net banking or wallet through Razorpay (section 5).",
 ])
 H2("Principles")
 bullets([
-    "<b>Free to run.</b> No paid AI APIs, no database, free job APIs and free hosting.",
+    "<b>Free to run.</b> No paid AI APIs, no database, free job APIs and free hosting. Payments are optional.",
     "<b>Private.</b> Résumés are read in memory and discarded; nothing about the user is stored.",
     "<b>Fast.</b> A warm search returns in about 0.25 seconds; 100 simultaneous uploads all succeed.",
+    "<b>Professional and calm.</b> A full-width layout in black, white and greys with one green accent; subtle entrance and scroll animations, buttons that lift on hover and press into a rounded pill when clicked, all switched off for visitors who prefer reduced motion.",
     "<b>Honest.</b> Every score comes with its reasons, every job shows its exact posting date and links to the "
     "original posting. Only sources that report the real posting date are used.",
 ])
-image("screenshot-home.png", 165, "The search screen.")
+image("screenshot-home.png", 165, "The landing page: a clear promise, live job statistics and the upload form side by side, using the full width of the screen.")
 image("screenshot-results.png", 165, "Results: filters across the top apply instantly; the editable profile and links to other job sites are on the right.")
 story.append(PageBreak())
 
@@ -288,16 +300,25 @@ H2("3.3 The matching method")
 P("Each job gets four sub-scores between 0 and 1, which are combined into a percentage:")
 table([
     ["Signal", "Weight", "How it is measured"],
-    ["Skills", "38%", "55% x (share of the job's skills you have) + 45% x (how many you match, full credit at 4). "
+    ["Skills", "36%", "55% x (share of the job's skills you have) + 45% x (how many you match, full credit at 4). "
                       "Generic skills such as Git, Excel or 'communication' count about a third as much."],
-    ["Title", "32%", "1.0 if one of your titles appears in the job title; otherwise word overlap of the core title "
+    ["Title", "30%", "1.0 if one of your titles appears in the job title; otherwise word overlap of the core title "
                      "words (synonyms like developer = engineer); at least 0.5 when both are in the same role family "
                      "(20 families such as software, data, design, sales, finance, healthcare)."],
-    ["Text", "17%", "TF-IDF cosine similarity between your résumé keywords and the job text, using word rarity "
+    ["Text", "14%", "TF-IDF cosine similarity between your résumé keywords and the job text, using word rarity "
                     "learned from the whole job index."],
-    ["Experience", "13%", "Your years against the job's required years ('5+ years of experience'), or against the "
-                          "seniority in the title (intern, junior, senior, lead, director)."],
+    ["Experience", "20%", "Your years against the job's required range ('3-5 years', '5+ years of experience'), or against "
+                          "the seniority in the title (intern, junior, senior, lead, director). Far more experience than a "
+                          "range asks for counts a little less."],
 ], [26 * mm, 18 * mm, 124 * mm])
+P("<b>Experience gate (on by default).</b> A job's seniority is read from the required years (English, German and French), the title (Intern, Junior, I, II, Senior, Staff, Principal, Director...) and, if neither says anything, wording in the description ('entry level', 'new grad', 'mehrjährige Berufserfahrung'). With <b>Match my experience level</b> ticked, roles that need clearly more experience than you have (more than max(1.5 years, 35%) above yours, or two levels higher) and roles clearly too junior (two levels lower, or a range you exceed by 5+ years) are hidden, and the results say how many. Tested on the live index: a fresher saw no Senior or Staff roles (903 hidden) and a senior engineer saw no junior roles. Jobs that list four or more specific skills, none of them yours, under a different title are dropped, and newer postings win between similar scores.")
+P("<b>Experience verdict.</b> Every result also gets a plain-language verdict: <i>Experience fits</i>, <i>Slightly under "
+  "the ask</i> (within a year), <i>Below the experience asked</i>, <i>More experience than asked</i> or <i>Experience not "
+  "stated</i>, with the sentence behind it, for example \"Asks for 3-5 years of experience; you have about 4 years.\"")
+P("<b>Unlimited and custom skills.</b> A profile can hold up to 300 skills (a safety limit, not a product limit). Skills "
+  "in the built-in vocabulary are matched through the pre-computed skill lists. Any other skill the user types "
+  "(for example 'Zephyr RTOS' or a company tool) is turned into one whole-word search and run against each "
+  "candidate job's full title, tags and description, then counted like any other matched skill.")
 P("Two safeguards keep results sensible: a job that is a different kind of role <i>and</i> shares at most one "
   "skill is cut to about half its score, and at most three jobs per company are shown. If no title is found in the "
   "résumé, the weights shift to skills (55%), text (30%) and experience (15%). The final value goes through a "
@@ -312,9 +333,12 @@ P("Rule number one: a source is only used if it reports the date the job was rea
   "filters cannot be trusted.")
 table([
     ["Source", "What it adds", "Posting date from", "Key"],
-    ["Company career sites", "~150 employers (Stripe, Databricks, MongoDB, Okta, Zscaler, Freshworks, Meesho, CRED, "
-     "Rubrik, ServiceNow, Bosch...) via the official job APIs of Greenhouse, Lever, Ashby and SmartRecruiters",
+    ["Company career sites", "~186 employers (Stripe, Databricks, Snowflake, MongoDB, OpenAI, Anthropic, Freshworks, "
+     "Meesho, CRED, Paytm, ServiceNow, Bosch...) via the official job APIs of Greenhouse, Lever, Ashby and "
+     "SmartRecruiters, with full descriptions (SmartRecruiters descriptions fetched once per new job)",
      "The employer's own first-publish date", "No"],
+    ["Hacker News 'Who is hiring?'", "Startup jobs from the last two monthly threads (public Algolia API); only posts "
+     "in the requested 'Company | Role | Location' format are used", "Time of the post", "No"],
     ["Remotive", "Remote tech jobs (feed + live search)", "Board posting date", "No"],
     ["Remote OK", "Remote jobs (slow API, read in the background)", "Board posting date", "No"],
     ["We Work Remotely", "Remote jobs (RSS feed)", "Board posting date", "No"],
@@ -333,6 +357,10 @@ P("<b>Himalayas was removed.</b> We compared its dates with the employers' own G
   "reported the date it re-imported a job, which lagged the real posting by 1-4 days for most jobs and by up to four "
   "weeks for some (a Stripe job first published on 16 Oct appeared as 14 Nov). That is why 'last 24 hours' showed "
   "month-old jobs in version 1.0.")
+P("<b>Sources tested and left out in 2.0.</b> Workday career sites answered with HTTP 429 (rate limited) even at one "
+  "request every few seconds and do not list jobs newest-first, so crawling them would be unreliable and impolite; "
+  "DreamJob helps with Workday through the autofill extension instead. The Muse sits behind a bot challenge. "
+  "Recruitee, Personio and Breezy work, but very few matching employers were found. Naukri has no public API.")
 P("These APIs ask for attribution and a link back. DreamJob names the source on every result, links to the original "
   "posting and does not republish jobs elsewhere. Read each provider's terms before launch.")
 H2("3.5 Designed for 100 users at once")
@@ -344,8 +372,13 @@ bullets([
     "<b>Shared, cached live search.</b> 100 users searching for 'data analyst' trigger one upstream call, not 100.",
     "<b>Pre-screening.</b> Jobs that share no skill and no role family are skipped before scoring.",
     "<b>Heavy work off the event loop.</b> PDF parsing and ranking run in a thread pool; the server keeps accepting requests.",
-    "<b>Multiple workers.</b> Two Uvicorn workers use both CPUs on Hugging Face Spaces.",
-    "<b>Snapshot on disk.</b> The index is saved after each refresh, so a restart serves jobs immediately.",
+    "<b>Multiple workers, one crawler.</b> Two Uvicorn workers use both CPUs on Hugging Face Spaces. Only the worker "
+    "holding <font face='%s'>data/crawler.lock</font> calls the job sources; the others reload its snapshot when it "
+    "changes. Each employer API is called once, not once per worker." % MONO,
+    "<b>Polite crawling.</b> At most 6 boards at a time; a board that answers 429 is retried once after 10 seconds, and "
+    "a board that still fails keeps the jobs it had. Descriptions are downloaded once per job and reused.",
+    "<b>Snapshot on disk.</b> The index is saved after each refresh (atomically, one temporary file per process), so a "
+    "restart serves jobs immediately.",
     "<b>Small, cached frontend.</b> About 30 KB of HTML/CSS/JS, gzip-compressed, no framework.",
 ])
 H2("3.6 Security and privacy")
@@ -354,24 +387,33 @@ bullets([
     "Upload limits: 5 MB, at most 12 PDF pages and 60,000 characters of text.",
     "Rate limit per visitor IP. The IP is read from the address appended by the host's proxy, so a client cannot "
     "dodge the limit by faking the X-Forwarded-For header.",
-    "All job data is HTML-escaped before display, and only http(s) links are rendered, which blocks script "
-    "injection from third-party job text.",
-    "Security headers (nosniff, referrer policy); the container runs as a non-root user.",
-    "Input validation on every API field (allowed windows, top values, list sizes).",
+    "All job data is HTML-escaped before display (full descriptions are inserted as plain text), and only http(s) "
+    "links are rendered, which blocks script injection from third-party job text.",
+    "Security headers: a Content Security Policy that allows scripts only from DreamJob and Razorpay Checkout, "
+    "X-Frame-Options DENY, HSTS, nosniff, a referrer policy and a permissions policy. API responses are not cached.",
+    "Payment secrets come only from environment variables. They are never sent to the browser (tested) or logged. "
+    "The order amount is set by the server. Payment and webhook signatures are checked with constant-time comparison.",
+    "Separate rate limits for searches (30/min), payments (10/min), purchase restores (5/min) and résumé imports (10/min).",
+    "Input validation on every API field (allowed windows, top values, list sizes, Razorpay ID formats).",
+    "The repository ignores .env files, keys and certificates, the job snapshot and generated PDFs, so secrets "
+    "cannot be committed by accident. The container runs as a non-root user.",
 ])
 H2("3.7 Code map")
 table([
     ["File", "Responsibility"],
-    ["app/main.py", "API routes, rate limiting, headers, static files, startup/shutdown"],
-    ["app/index.py", "Job index, background refresh, per-source updates, live-search cache, disk snapshot"],
-    ["app/sources.py", "One connector per source (company sites, job boards, keyed APIs), all normalised to one format"],
-    ["app/companies.py", "The verified list of ~150 company career boards (add more with one line each)"],
-    ["app/matcher.py", "Résumé reading, profile building, scoring, explanations and ranking"],
-    ["app/nlp.py", "Tokenizer, skill/title/seniority/experience extraction, TF-IDF"],
+    ["app/main.py", "API routes, rate limiting, security headers, policy pages, extension download, startup/shutdown"],
+    ["app/payments.py", "Razorpay orders, payment and webhook signatures, capture, signed Pro passes, restore, refunds"],
+    ["app/index.py", "Job index, crawler lock, background refresh, live-search cache, disk snapshot"],
+    ["app/sources.py", "One connector per source (company sites, job boards, Hacker News, keyed APIs), all normalised to one format"],
+    ["app/companies.py", "The verified list of ~186 company career boards (add more with one line each)"],
+    ["app/matcher.py", "Résumé reading, profile building, scoring, experience verdicts, explanations and ranking"],
+    ["app/nlp.py", "Tokenizer, skill/title/seniority/experience extraction, contact and work-history extraction, TF-IDF"],
     ["app/skills.py", "Skill vocabulary (with aliases) and job titles by role family"],
     ["app/config.py", "All settings, read from environment variables"],
-    ["static/", "index.html, styles.css, app.js, logo and favicon"],
-    ["tests/test_core.py", "13 offline tests: parsing, ranking, strict time windows, filters, sources, API, rate limit"],
+    ["static/", "index.html, styles.css, app.js, logos (served as files)"],
+    ["app/pages/", "Pricing, terms, privacy, refunds, contact and autofill pages, filled from your business settings"],
+    ["extension/", "DreamJob Autofill: manifest, fill engine (filler.js), popup, profile page, floating button"],
+    ["tests/", "41 offline tests: parsing, ranking, time windows, filters, sources, payments, pages, headers, crawler"],
     ["scripts/load_test.py", "Simulates N users uploading at the same moment"],
     ["Dockerfile, render.yaml", "Container and Render blueprint"],
     [".github/workflows/", "ci.yml runs tests on every push; keepalive.yml pings the site"],
@@ -379,25 +421,237 @@ table([
 story.append(PageBreak())
 
 # =====================================================================================================
-# 4. TESTS
+# 4. AUTOFILL EXTENSION
 # =====================================================================================================
-H1("4. Quality, speed and capacity: test results")
-P("Measured on 17 November 2026 on a Windows laptop, against the real job sources.")
+H1("4. The autofill extension (Workday and other application forms)")
+P("Applying on Workday means typing the same name, address, phone, work history and education on every company's "
+  "site, often across five or six steps. <b>DreamJob Autofill</b> is a free browser extension for Chrome and Edge that "
+  "fills those forms from one saved profile.")
+H2("4.1 What it fills")
+table([
+    ["Group", "Fields"],
+    ["Personal", "First, middle, last and preferred name; email; phone, phone country code and phone type"],
+    ["Address", "Address lines, city, state, PIN/postal code, country (also Workday's country dropdown)"],
+    ["Links", "LinkedIn, GitHub, portfolio or website"],
+    ["Common questions", "Total experience, current and expected salary/CTC, notice period, how you heard about the job"],
+    ["Yes/no questions", "Authorised to work, needs sponsorship, willing to relocate, 18 or older, worked here before. "
+                         "Only answered if you set them; otherwise left for you"],
+    ["Work experience", "Job title, company, location, start and end month/year, 'I currently work here', description. "
+                        "Block 1 gets your most recent job, block 2 the next, and so on. On Workday, missing blocks are added"],
+    ["Education", "School, degree (including Workday's degree dropdown), field of study, dates, grade"],
+    ["Your own answers", "Any question containing words you choose, e.g. 'notice period' -> '30 days'. These win over everything else"],
+    ["Résumé file", "Attached to the résumé/CV upload field"],
+    ["Voluntary self-ID", "Gender, ethnicity, veteran and disability status: never filled unless you enter them"],
+], [32 * mm, 136 * mm])
+H2("4.2 How it works")
+bullets([
+    "<b>Finding the right field.</b> For every visible input, dropdown and radio group it reads the label, ARIA label, "
+    "placeholder, name, id and Workday's <font face='%s'>data-automation-id</font>, then applies about 40 rules ordered "
+    "from specific to general (for example 'Company name' is never treated as your name)." % MONO,
+    "<b>Setting values the way a person would.</b> Values are set through the browser's native setter and followed by "
+    "input, change and blur events, so React, Angular and Workday register them. Workday's custom dropdowns are opened, "
+    "the closest option is chosen and the list is closed.",
+    "<b>Sections.</b> The nearest heading tells it whether a field belongs to work experience or education, and blocks "
+    "are counted in order, even when some fields are already filled.",
+    "<b>Safety.</b> It only fills empty fields (unless you tick 'Replace fields that already have a value'), outlines "
+    "what it filled in green, and never clicks Submit, Next, Apply or any consent box.",
+    "<b>Privacy.</b> The profile and résumé live in the browser's extension storage on your device. The extension "
+    "reads a page only when you press Fill. 'Import details from résumé' sends the file once to your own DreamJob server "
+    "(after you grant permission for that address), which reads it in memory and returns the details.",
+])
+H2("4.3 Where it works")
+P("A 'Fill with DreamJob' button appears on Workday (myworkdayjobs.com, myworkdaysite.com), Greenhouse, Lever, Ashby, "
+  "SmartRecruiters, Workable, iCIMS, SuccessFactors, Taleo, Recruitee, Breezy, Personio, BambooHR, Jobvite and Oracle "
+  "Recruiting sites, including Greenhouse forms embedded in company pages. On any other site, click the extension "
+  "icon and choose <b>Fill this page</b>, or press <b>Alt+Shift+F</b>. Workday shows one step at a time, so fill each "
+  "step as it appears.")
+H2("4.4 Install it")
+steps([
+    "Open your DreamJob site and go to <b>/autofill</b>. Click <b>Download the extension</b> and unzip it.",
+    "Open <font face='%s'>chrome://extensions</font> (Chrome) or <font face='%s'>edge://extensions</font> (Edge) and turn on "
+    "<b>Developer mode</b>." % (MONO, MONO),
+    "Click <b>Load unpacked</b> and choose the <b>dreamjob-autofill</b> folder. The profile page opens.",
+    "Choose your résumé, enter your DreamJob address and click <b>Import details from résumé</b>. Check every field, "
+    "add your answers, then click <b>Save profile</b>.",
+    "Pin the extension from the puzzle-piece menu.",
+])
+image("extension-profile.png", 150, "The profile page: fill it once, or import it from your résumé.")
+image("extension-popup.png", 70, "The toolbar popup. On supported job sites a 'Fill with DreamJob' button also appears in the corner.")
+H2("4.5 Publishing it in the stores (optional)")
+table([
+    ["Store", "Cost", "Notes"],
+    ["Microsoft Edge Add-ons", "Free", "Register at partner.microsoft.com, upload the zip, fill in the listing and the privacy "
+                                       "details (data stays on the device). Review usually takes a few days."],
+    ["Chrome Web Store", "One-time US$5 developer registration", "Upload the zip at the Chrome Web Store developer dashboard. "
+                                       "Explain each permission: storage (your profile), activeTab and scripting "
+                                       "(fill the page you ask it to), host access to job sites (show the Fill button)."],
+], [40 * mm, 40 * mm, 88 * mm])
+P("Until it is in a store, the 'Load unpacked' install above works in Chrome and Edge at no cost.", "small")
+story.append(PageBreak())
+
+# =====================================================================================================
+# 5. RAZORPAY
+# =====================================================================================================
+H1("5. Payments with Razorpay: complete setup")
+P("DreamJob is free. If you want income, turn on <b>DreamJob Pro</b>: a one-time payment (default ₹99 for 30 days) that "
+  "unlocks Top 20 and Top 30 results. Payments are off until you add Razorpay keys, and every price and limit is a setting.")
+H2("5.1 What it costs")
+table([
+    ["Item", "Cost (Razorpay standard plan, India)"],
+    ["Account, setup, annual maintenance", "Free: no setup fee and no annual fee"],
+    ["Test mode", "Free and unlimited; works before your account is activated"],
+    ["Each successful domestic payment", "About 2% of the amount plus 18% GST on that fee (about ₹2.34 on ₹99)"],
+    ["Settlement to your bank", "Automatic, usually 2 working days after payment"],
+    ["New-merchant offer (2026)", "Razorpay advertised 0% platform fee for 90 days or ₹5 lakh, for merchants activated "
+                                  "from 1 July 2026. Check the pricing page; offers change"],
+], [60 * mm, 108 * mm])
+P("Always confirm current rates at razorpay.com/pricing before launch.", "small")
+H2("5.2 How DreamJob takes a payment")
+steps([
+    "The visitor picks Top 20 or Top 30 (or clicks <b>Get Pro</b>) and sees the price, what they get and the refund policy.",
+    "<b>Pay</b> calls <font face='%s'>POST /api/pay/order</font>. The server creates a Razorpay order with the amount "
+    "from its own settings and a <font face='%s'>product: dreamjob_pro</font> note. The browser cannot change the price." % (MONO, MONO),
+    "Razorpay Checkout opens (UPI, cards, net banking, wallets). Card and UPI details go to Razorpay only.",
+    "On success, Checkout returns the order ID, payment ID and a signature. The server (<font face='%s'>/api/pay/verify</font>) "
+    "checks the signature: HMAC-SHA256 of order_id|payment_id with your key secret." % MONO,
+    "The server then asks Razorpay's API for the payment and the order, and checks that the payment belongs to that "
+    "order, is in rupees, matches the order amount, is for DreamJob Pro and is not refunded. If the account uses manual "
+    "capture, it captures the payment.",
+    "The server returns a <b>Pro pass</b>: a small token signed with HMAC that holds the payment ID and expiry date. "
+    "The browser keeps it and sends it with searches. No database is needed.",
+    "<b>Restore access</b> (another device, or cleared browser): the visitor enters the payment ID from Razorpay's "
+    "receipt email and the email they paid with. The server checks both with Razorpay and issues the pass again.",
+    "<b>Refunds.</b> A refund webhook revokes the pass at once. Each server worker also re-checks a pass's payment "
+    "with Razorpay at most every 6 hours, so a refund is honoured even if a webhook is missed.",
+])
+image("pro-dialog.png", 150, "The DreamJob Pro window. 'Pay' opens Razorpay Checkout; 'Restore access' brings a pass back on any device.")
+callout("<b>If something goes wrong:</b> if Checkout is closed, nothing is charged and the button resets. If a payment "
+        "fails, Razorpay's reason is shown and the visitor can retry. If verification fails after money was taken, the "
+        "payment ID is shown so they can use Restore or email you. If Razorpay is unreachable, the visitor sees "
+        "\"You have not been charged twice\" and can retry.")
+H2("5.3 Step by step: from zero to accepting payments")
+H3("A. Create the account and test (no documents needed)")
+steps([
+    "Go to <b>dashboard.razorpay.com</b> and sign up with your email and mobile number. Choose your business type: "
+    "<b>Individual</b> or <b>Proprietorship</b> works for a personal project, and Razorpay supports freelancers and "
+    "individuals.",
+    "In the dashboard, switch the mode toggle to <b>Test Mode</b>.",
+    "Open <b>Account &amp; Settings → API Keys → Generate Test Key</b>. Copy the <b>Key ID</b> (starts with "
+    "<font face='%s'>rzp_test_</font>) and the <b>Key Secret</b>. The secret is shown once; store it in a password manager." % MONO,
+    "Run DreamJob locally with the keys (never put them in a file inside the repository):",
+])
+code("""
+# Windows PowerShell
+$env:RAZORPAY_KEY_ID="rzp_test_xxxxxxxxxxxx"
+$env:RAZORPAY_KEY_SECRET="xxxxxxxxxxxxxxxxxxxx"
+$env:CONTACT_EMAIL="you@example.com"
+uvicorn app.main:app --port 8000
+
+# macOS / Linux
+RAZORPAY_KEY_ID=rzp_test_xxx RAZORPAY_KEY_SECRET=xxx CONTACT_EMAIL=you@example.com uvicorn app.main:app --port 8000
+""")
+steps([
+    "Open the site, upload a résumé and choose <b>Top 20</b>. The Pro window opens. Click <b>Pay ₹99</b>.",
+    "Pay with a test card: <b>4100 2800 0000 1007</b> (Visa, India), any future expiry date and any CVV, then click "
+    "<b>Success</b> on Razorpay's mock bank page. Or choose UPI and use a test UPI ID from Razorpay's 'Test Card Details' "
+    "page (for example <font face='%s'>success@razorpay</font>)." % MONO,
+    "The window closes, a message confirms Pro, and Top 20 results appear. The header shows 'Pro until ...'.",
+    "Test the failure path too: use the mock bank page's <b>Failure</b> button. DreamJob shows the reason and lets you retry.",
+    "Test Restore: open the site in a private window, choose Top 20, click <b>Already purchased? Restore access</b>, and "
+    "enter the test payment ID (Dashboard → Transactions → Payments) and the email you typed at checkout.",
+])
+H3("B. Add the webhook (refunds and reconciliation)")
+steps([
+    "Your site must be online first (section 7). In the dashboard, open <b>Account &amp; Settings → Webhooks → "
+    "Add New Webhook</b>.",
+    "Webhook URL: <font face='%s'>https://&lt;your-site&gt;/api/pay/webhook</font>. Secret: a long random string you "
+    "make up. Alert email: yours." % MONO,
+    "Active events: <b>payment.captured</b>, <b>payment.failed</b>, <b>refund.created</b>, <b>refund.processed</b>.",
+    "Save, and add the same secret to your host as <b>RAZORPAY_WEBHOOK_SECRET</b>.",
+    "Use the dashboard's test-delivery feature, or make a test payment, and check the site's logs for a line like "
+    "'razorpay webhook payment.captured pay_...'.",
+])
+H3("C. Activate the account and go live")
+steps([
+    "Fill in the business details in the dashboard: PAN (personal PAN for individuals), bank account in your name, "
+    "address, and the website <b>https://&lt;your-site&gt;</b>. Aadhaar-based e-KYC or video KYC may be asked for. "
+    "Razorpay's current rules say Terms, Privacy and Refund pages are no longer required at onboarding, but they "
+    "still check the website before issuing live keys. DreamJob already has /terms, /privacy, /refunds, /contact and /pricing.",
+    "Set <b>CONTACT_EMAIL</b> (and <b>BUSINESS_NAME</b>, <b>BUSINESS_ADDRESS</b>) so those pages show real details. Make sure "
+    "the live site shows the price clearly and loads without errors.",
+    "When activation is approved, switch the dashboard to <b>Live Mode</b> and generate <b>Live Keys</b> "
+    "(<font face='%s'>rzp_live_...</font>)." % MONO,
+    "In your host's <b>Secrets</b>, replace the test keys with the live keys, add a live-mode webhook (same URL and "
+    "events, new secret) and update RAZORPAY_WEBHOOK_SECRET. Optionally set PASS_SECRET to a long random string.",
+    "Make one real ₹99 payment yourself, check it in the dashboard, then refund it there (Transactions → Payments → "
+    "Refund). Confirm your pass stops working after the refund.",
+])
+H2("5.4 Settings")
+table([
+    ["Variable", "Example", "Meaning"],
+    ["RAZORPAY_KEY_ID", "rzp_live_AbC...", "Public key ID (safe to show in the browser)"],
+    ["RAZORPAY_KEY_SECRET", "(secret)", "Signs and checks payments. Host Secrets only"],
+    ["RAZORPAY_WEBHOOK_SECRET", "(secret)", "Checks webhook signatures. Host Secrets only"],
+    ["PASS_SECRET", "(optional secret)", "Signs Pro passes. If empty, derived from the key secret"],
+    ["PRO_PRICE_INR / PRO_DAYS", "99 / 30", "Price in rupees (including GST if you charge it) and length of a pass"],
+    ["PRO_TOPS", "20,30", "Result sizes that need Pro (e.g. '30' to keep Top 20 free)"],
+    ["BUSINESS_NAME / CONTACT_EMAIL / BUSINESS_ADDRESS", "DreamJob / you@... / Hyderabad, Telangana", "Shown on the policy and contact pages"],
+], [55 * mm, 40 * mm, 73 * mm])
+H2("5.5 Rules to follow")
+bullets([
+    "<b>Never commit keys.</b> .env files are ignored by Git; use the host's Secrets page. If a secret ever leaks, "
+    "regenerate it in the dashboard at once.",
+    "<b>Refunds:</b> the built-in policy promises a full refund within 7 days on request. Process refunds from the dashboard.",
+    "<b>Tax:</b> GST registration is generally required only above the turnover threshold (₹20 lakh for most service "
+    "businesses); income from sales is taxable. Ask a chartered accountant before you earn significant amounts.",
+    "<b>Customer support:</b> answer emails within 2 working days (as the Contact page promises). Unanswered complaints "
+    "lead to chargebacks.",
+])
+H2("5.6 Razorpay resources")
+table([
+    ["What", "Where"],
+    ["Sign up / dashboard", "dashboard.razorpay.com"],
+    ["Pricing", "razorpay.com/pricing"],
+    ["Standard Checkout integration guide", "razorpay.com/docs/developer-tools/integrations/standard-checkout/"],
+    ["Test cards and test UPI IDs", "razorpay.com/docs/payments/payments/test-card-details"],
+    ["Account activation and KYC help", "razorpay.com/docs/payments/account-activation-support"],
+    ["Webhooks (setup and signature check)", "razorpay.com/docs/webhooks/"],
+    ["Payments FAQ", "razorpay.com/docs/payments/faqs"],
+    ["Support", "Dashboard → Help &amp; Support (raise a ticket)"],
+], [60 * mm, 108 * mm])
+story.append(PageBreak())
+
+# =====================================================================================================
+# 6. TESTS
+# =====================================================================================================
+H1("6. Quality, speed and capacity: test results")
+P("Version 2.0 measured on 25 November 2026 on a Windows laptop, against the real job sources, in Microsoft Edge.")
 table([
     ["Check", "Result"],
-    ["Automated tests (pytest)", "13 passed"],
-    ["Jobs indexed after a full refresh", "about 7,800 (company sites 6,500; boards 2,500); 0 of 153 company boards failing"],
-    ["Jobs per window", "24 h: 1,147   48 h: 1,416   72 h: 1,898   1 week: 3,932   1 month: 7,779"],
-    ["Strict time windows (browser test)", "Oldest job shown: 24 h window 15.6 h; 48 h 44.5 h; 72 h 65 h; 1 week 149 h; 1 month 702 h"],
-    ["Fast filter clicks (24 h, then 1 month, then 48 h)", "Screen ends on the 48 h results; older responses are discarded"],
-    ["Top 3 / 10 / 20 / 30", "Exactly 3 / 10 / 20 / 30 jobs shown"],
-    ["Location 'India' (Enter key) and Remote only", "Only Indian cities or worldwide-remote jobs; 'Remote - US' jobs excluded"],
-    ["First full crawl of company sites", "about 5 minutes in the background; later refreshes only download new jobs"],
-    ["Single search, warm", "0.3 seconds"],
-    ["100 users uploading at the same instant (2 workers)", "100 of 100 succeeded; p95 2.8-3.7 s"],
-    ["Memory per worker", "about 185 MB"],
-    ["Browser test", "No JavaScript errors; no sideways scrolling at phone width"],
-], [70 * mm, 98 * mm])
+    ["Automated tests (pytest)", "41 passed (also run by GitHub Actions on every push)"],
+    ["Jobs indexed after a full refresh", "8,890 (company career sites 7,594 from 186 boards; job boards 1,296 incl. 307 from Hacker News)"],
+    ["Jobs per window", "24 h: 1,230   48 h: 2,145   72 h: 2,609   1 week: 4,242   1 month: 8,846"],
+    ["First full crawl of company sites", "3 minutes (182 s), including full descriptions; later refreshes only download new jobs"],
+    ["Web app in the browser", "Upload, 10 results, experience verdict on every result, full description and score bars open; "
+                               "3 skills added in one go; 'Clear all' then update works; 24 h filter shows only jobs from the last "
+                               "24 hours; Top 3 shows 3; no JavaScript errors; no sideways scrolling at 390 px; all six pages load"],
+    ["Payments (test keys)", "Top 20 opens the Pro window and stays on Top 10; the API refuses Top 20 without a pass (402); "
+                             "rejected keys show 'Nothing was charged'; Razorpay Checkout loads under the security policy; "
+                             "no secret appears in the page or /api/config"],
+    ["Payment logic (automated, Razorpay mocked)", "Order amount from server; signature check; capture of authorized payments; "
+                                                    "wrong amount, wrong product, failed payment and wrong restore email rejected; refund "
+                                                    "webhook revokes the pass; bad webhook signature rejected"],
+    ["Autofill extension (Edge, practice forms)", "Workday-style form: 30 fields filled across personal details, 2 work-experience "
+                                                   "blocks (added automatically), education, dropdowns, dates, a radio question, a "
+                                                   "custom answer and the résumé file; consent box and Submit untouched; a second run "
+                                                   "changes nothing. Greenhouse-style form: 10 fields, existing values kept"],
+    ["Extension installed for real", "Loads in Edge; profile saves and survives reload; popup shows the profile; Fill button on a "
+                                     "Greenhouse address fills the form; 'hide on this site' is remembered"],
+    ["Single search, warm", "0.15 seconds"],
+    ["100 users uploading at the same instant (2 workers)", "100 of 100 succeeded; p50 2.6 s, p95 3.6 s"],
+    ["Crawling with 2 workers", "Only one worker calls the job sources; the other loads its snapshot"],
+    ["Memory per worker", "about 270-310 MB (full descriptions are now kept)"],
+], [62 * mm, 106 * mm])
 H2("What the matcher returned for the sample résumé")
 P("Sample: a senior backend engineer with Python, Go, Kafka, Kubernetes and AWS. Top results were senior backend "
   "roles at 85-90% from company career sites and job boards, with skills like Kotlin or BigQuery listed under "
@@ -410,7 +664,7 @@ story.append(PageBreak())
 # =====================================================================================================
 # 5. PRODUCTION
 # =====================================================================================================
-H1("5. Going live: step-by-step production guide")
+H1("7. Going live: step-by-step production guide")
 P("Follow the steps in order. You need about an hour, a GitHub account and a Hugging Face account, and no credit card.")
 H2("Step 0. Choose where to host")
 table([
@@ -424,23 +678,19 @@ table([
 ], [38 * mm, 38 * mm, 48 * mm, 44 * mm])
 P("Free-tier limits change from time to time; check each provider's pricing page on the day you deploy.", "small")
 
-H2("Step 1. Put the code on GitHub")
-steps([
-    "Create a free account at github.com and click <b>New repository</b>. Name it <b>dreamjob</b>, choose Public or "
-    "Private, and do not add a README (the project has one).",
-    "Install Git if needed (git-scm.com). Then, in the project folder, run:",
-])
+H2("Step 1. Keep the code on GitHub")
+P("The project lives at <b>github.com/Software-Cookie/DreamJob</b> (public). To publish changes:")
 code("""
-cd D:\\Agents\\DreamJob
-git init
-git add .
-git commit -m "DreamJob v1.0"
-git branch -M main
-git remote add origin https://github.com/<your-username>/dreamjob.git
-git push -u origin main
+cd D:\\Agents\\BestMatch
+git status                      # check: no .env, keys or data/ files listed
+git add -A
+git commit -m "Describe the change"
+git push
 """)
-P("The <font face='%s'>.gitignore</font> already excludes the virtual environment, caches and the job snapshot. "
-  "On GitHub, open the <b>Actions</b> tab: the CI workflow runs the tests on every push." % MONO)
+P("The <font face='%s'>.gitignore</font> excludes the virtual environment, caches, the job snapshot, generated PDFs, "
+  ".env files, keys and certificates. On GitHub, open the <b>Actions</b> tab: the CI workflow runs all tests on every "
+  "push, and a red cross means do not deploy. Because the repository is public, never put keys in code; if one leaks, "
+  "regenerate it at the provider immediately (removing it from Git history is not enough)." % MONO)
 
 H2("Step 2. Deploy on Hugging Face Spaces (recommended)")
 steps([
@@ -465,8 +715,20 @@ steps([
     "Open the Space page. The status shows <b>Building</b> (2-4 minutes), then <b>Running</b>.",
     "Your public address is <b>https://&lt;hf-username&gt;-dreamjob.hf.space</b>. The first minute after start is "
     "spent collecting jobs; the header shows how many are indexed.",
-    "Optional settings (Adzuna key, refresh interval) go under <b>Settings > Variables and secrets</b>. Put keys under "
-    "<b>Secrets</b>. The Space restarts automatically.",
+    "Settings go under <b>Settings > Variables and secrets</b>. Put keys under <b>Secrets</b> (never Variables): "
+    "RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET, PASS_SECRET, JSEARCH_API_KEY and so on. Put "
+    "CONTACT_EMAIL, BUSINESS_NAME, BUSINESS_ADDRESS, PRO_PRICE_INR and SITE_URL under Variables. The Space restarts "
+    "automatically.",
+    "Hugging Face keeps files in /app/data only while the Space runs, so after a restart the first crawl takes a few "
+    "minutes. That is expected.",
+])
+H2("Step 2b. Turn on payments and share the extension")
+steps([
+    "Follow section 5.3: test keys first, then the webhook, then live keys after activation.",
+    "Open <b>https://&lt;your-site&gt;/pricing</b>, <b>/terms</b>, <b>/privacy</b>, <b>/refunds</b> and <b>/contact</b> and "
+    "check your name and email appear correctly.",
+    "Open <b>/autofill</b>, download the extension, install it and use 'Import details from résumé' with your live "
+    "address. Fill a real Workday application up to the review step (do not submit) to check it.",
 ])
 P("To update the live site later, commit your change and run <font face='%s'>git push origin main</font> (GitHub) "
   "and <font face='%s'>git push space main</font> (the Space)." % (MONO, MONO))
@@ -498,11 +760,29 @@ steps([
     "Register at <b>developer.adzuna.com</b> and create an application; copy the <b>App ID</b> and <b>App Key</b>.",
     "Add secrets <b>ADZUNA_APP_ID</b> and <b>ADZUNA_APP_KEY</b>, and variable <b>ADZUNA_COUNTRY</b> (in, us, gb, de...).",
 ])
+P("<b>Why not scrape LinkedIn, Naukri or Monster directly?</b> None of them offers a public jobs API, and their terms "
+  "forbid automated scraping. LinkedIn in particular blocks cloud servers and has taken scrapers to court. A scraper "
+  "would get a free host's IP blocked within days and put the project at legal risk. JSearch, Jooble, Adzuna and "
+  "Careerjet are licensed aggregators that already carry those listings, so DreamJob uses them instead.")
 H3("Jooble: large aggregator")
 steps([
     "Request a key at <b>jooble.org/api/about</b>; it arrives by email.",
     "Add secret <b>JOOBLE_API_KEY</b>. Usage limits are set per key by Jooble.",
 ])
+H3("Careerjet: Indian and global job sites")
+steps([
+    "Create a free publisher account at <b>careerjet.com/partners</b> (Register as publisher) and add your site address.",
+    "Copy the API key for your site and save it as secret <b>CAREERJET_API_KEY</b>. CAREERJET_LOCALE defaults to en_IN (India).",
+    "DreamJob sends the visitor's IP address and browser name with each search, as Careerjet requires, and links every "
+    "result to Careerjet's listing page.",
+])
+H3("Deep search")
+P("With any of these keys set, each résumé is searched live up to three times per portal (the top job titles, then the "
+  "strongest skills phrased as a role, such as 'Python engineer'). JSearch also receives your experience band "
+  "(no experience, under 3 years, over 3 years). DreamJob waits up to 20 seconds while the loading screen names the sites "
+  "being searched. Results are cached and shared, so a second person with a similar profile gets them instantly. Tune "
+  "this with <b>DEEP_QUERIES</b> (1-5) and <b>DEEP_SEARCH_TIMEOUT</b> (seconds). Each JSearch query uses one request of the "
+  "free 200-a-month quota, so keep DEEP_QUERIES at 2-3 on the free plan.")
 P("Set <b>DEFAULT_COUNTRY</b> / <b>DEFAULT_COUNTRY_NAME</b> (default in / India) to your users' country. "
   "Free-plan limits change from time to time; check each provider's page.", "small")
 
@@ -529,6 +809,13 @@ table([
     ["Filters", "Location 'India', then Remote only", "Only matching or worldwide-remote jobs"],
     ["Phone", "Open the site on your phone", "No sideways scrolling; buttons easy to tap"],
     ["Errors", "Upload an image or an empty file", "A clear message, no crash"],
+    ["Skills", "Add 'Zephyr RTOS, Terraform, Power BI' in one go, then Update results", "All three appear as chips; matching jobs list them"],
+    ["Details", "Open 'Job description' and 'Why this match' on a result", "Full text with paragraphs; three score bars"],
+    ["Payments (test keys)", "Choose Top 20, pay with the test card, then refund it in the dashboard", "Pro activates; after the refund, Top 20 asks for Pro again"],
+    ["Restore", "Private window → Top 20 → Restore access", "Pro comes back with the payment ID and email"],
+    ["Policy pages", "Open /pricing, /terms, /privacy, /refunds, /contact", "Your business name and email are shown"],
+    ["Extension", "Install from /autofill, import from résumé, open a Workday job and press Fill", "Fields filled and outlined; nothing submitted"],
+    ["Secrets", "View the page source and open /api/config", "Only the rzp_ key ID appears, never a secret"],
     ["Load", "Run the load test (below)", "All 200 responses, p95 about 2-3 s"],
 ], [30 * mm, 70 * mm, 68 * mm])
 P("Load test against the live site. The rate limiter treats all test requests as one visitor, so raise the limit "
@@ -551,7 +838,7 @@ story.append(PageBreak())
 # =====================================================================================================
 # 6. OPERATIONS
 # =====================================================================================================
-H1("6. After launch: monitoring, upkeep and troubleshooting")
+H1("8. After launch: monitoring, upkeep and troubleshooting")
 H2("Monitoring")
 bullets([
     "<b>/api/stats</b> shows the number of indexed jobs, the last refresh time and each source's status and last error.",
@@ -578,31 +865,44 @@ table([
     ["'No readable text was found'", "Scanned (image) PDF", "Upload DOCX or paste text (OCR is on the roadmap)"],
     ["429 'Too many searches'", "Rate limit reached", "Wait a minute, or raise RATE_LIMIT_PER_MINUTE"],
     ["First visit takes ~1 minute", "Free host was asleep", "Set up the keep-alive ping (Step 5)"],
-    ["Out of memory on a 512 MB host", "Too many workers or jobs", "WEB_CONCURRENCY=1 and ARBEITNOW_PAGES=10"],
+    ["Out of memory on a 512 MB host", "Too many workers or jobs (about 300 MB per worker)", "WEB_CONCURRENCY=1 and ARBEITNOW_PAGES=3"],
     ["Space build fails", "README settings block missing", "Make sure README.md starts with the --- block (Step 2.4)"],
+    ["No 'Get Pro' button", "Payment keys missing", "Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET as Secrets; restart"],
+    ["'Payments are not set up correctly'", "Razorpay rejected the keys", "Copy the key pair again (test and live keys differ); the log says 'razorpay rejected the API keys'"],
+    ["Payment window does not open", "Ad blocker or network blocks checkout.razorpay.com", "Ask the user to allow it; the site shows this hint"],
+    ["Webhook shows failures in the dashboard", "Wrong secret or site asleep", "Match RAZORPAY_WEBHOOK_SECRET with the dashboard; keep the site awake"],
+    ["Paid user lost Pro", "New device or cleared browser", "Restore access with the payment ID and email"],
+    ["Extension fills nothing", "No profile saved, or the site uses unusual labels", "Save the profile; add your own answers for those questions"],
+    ["Many 'board ... 429' log lines", "An employer API is rate-limiting", "Nothing; it retries and keeps that board's jobs. Raise BOARD_REFRESH_MINUTES if constant"],
 ], [45 * mm, 50 * mm, 73 * mm])
 story.append(PageBreak())
 
 # =====================================================================================================
 # 7. LIMITATIONS
 # =====================================================================================================
-H1("7. Known limitations")
+H1("9. Known limitations")
 bullets([
     "<b>LinkedIn only through legitimate routes.</b> Without a JSearch key, LinkedIn jobs are reached through the "
     "'Search other job sites' links, not inside DreamJob's ranked list. JSearch's free quota (~200 requests a month) "
     "suits a personal or small public tool; heavy traffic needs a paid plan.",
-    "<b>Coverage follows the company list.</b> The ~150 company boards lean towards tech employers; most are global "
-    "companies, and about 1,200 of their jobs are in India. Adding Indian employers to app/companies.py, or adding "
-    "Adzuna/JSearch keys, widens coverage.",
+    "<b>Coverage follows the company list.</b> The ~186 company boards lean towards tech employers. Adding Indian "
+    "employers to app/companies.py, or adding Adzuna/JSearch keys, widens coverage. Workday-only employers are not "
+    "crawled (see 3.4).",
     "<b>Arbeitnow is mostly German jobs.</b> They match on skills but are rarely relevant in India; use the Location "
     "filter, or set ARBEITNOW_PAGES=0 to drop them.",
-    "<b>Rule-based reading.</b> Skills outside the vocabulary of about 300 are not detected automatically; users can "
-    "add them in the profile panel.",
+    "<b>Rule-based reading.</b> Skills outside the vocabulary of about 300 are not detected in the résumé automatically; "
+    "users add them in the profile panel, and those custom skills are then matched against job descriptions.",
+    "<b>Autofill is rule-based.</b> It was tested end to end in Microsoft Edge on practice forms built like Workday "
+    "and Greenhouse, not on every employer's live form, because live forms need accounts and real applications. Unusual "
+    "questions are left empty for you. Check the filled fields before you submit.",
+    "<b>Pro passes live in the browser.</b> There are no accounts. A pass is restored with the payment ID and email. "
+    "Refund status is shared across workers through Razorpay itself (checked at most every 6 hours) and instantly on the "
+    "worker that receives the webhook.",
     "<b>The rate limit is per worker process</b> (about 60 searches a minute per visitor with 2 workers).",
     "<b>Free hosts sleep</b>, and the first company-site crawl after a fresh deploy takes about five minutes.",
 ])
 
-H1("8. Next steps and roadmap")
+H1("10. Next steps and roadmap")
 P("Ordered by value for the effort. Everything listed can still be done for free.")
 H2("Next (1-2 weeks)")
 table([
@@ -611,6 +911,8 @@ table([
     ["OCR for scanned PDFs", "Some résumés are images", "Add Tesseract to the Docker image and use it when a PDF has no text"],
     ["Share results", "Users want to save or send their list", "'Copy link' that encodes the profile in the URL, or 'Download as PDF'"],
     ["Feedback buttons", "Learn where matching is wrong", "'Good match / not relevant' per job, counted in a free Google Form or Supabase table"],
+    ["Publish the extension", "One-click install for users", "Edge Add-ons (free) now; Chrome Web Store after the US$5 registration"],
+    ["Autofill field learning", "Fewer empty questions", "Offer 'Save this answer' for fields the user fills by hand, stored in the extension"],
 ], [38 * mm, 50 * mm, 80 * mm])
 H2("Later (1-2 months)")
 table([
@@ -626,7 +928,9 @@ H2("Growth")
 bullets([
     "Languages: translate the interface (Hindi, Telugu, Tamil...) and add skill aliases in those languages.",
     "Accessibility audit with a screen reader before a wide launch.",
-    "A browser extension that scores any job page you visit against your saved profile.",
+    "Extend the autofill extension to score any job page you visit against your saved profile.",
+    "Accounts and subscriptions (Razorpay Subscriptions) once there are enough paying users; this needs a database "
+    "(Supabase free tier) for users and passes.",
     "If traffic grows past the free tier: move to Oracle Cloud Always Free, or a paid Hugging Face CPU upgrade. "
     "The app is a single container, so moving is a 10-minute job.",
 ])
@@ -635,11 +939,13 @@ story.append(PageBreak())
 # =====================================================================================================
 # 9. COST
 # =====================================================================================================
-H1("9. Cost summary")
+H1("11. Cost summary")
 table([
     ["Item", "Service", "Cost"],
     ["Hosting", "Hugging Face Spaces (CPU basic) or Render free", "$0"],
-    ["Job data", "Company career site APIs, Remotive, Remote OK, We Work Remotely, Jobicy, Working Nomads, Arbeitnow", "$0"],
+    ["Job data", "Company career site APIs, Hacker News, Remotive, Remote OK, We Work Remotely, Jobicy, Working Nomads, Arbeitnow", "$0"],
+    ["Payments (optional)", "Razorpay: no setup or annual fee", "About 2% + GST per successful payment"],
+    ["Autofill extension", "Load unpacked, or Edge Add-ons", "$0 (Chrome Web Store: one-time US$5, optional)"],
     ["LinkedIn, Indeed, Glassdoor (optional)", "JSearch free plan (~200 requests a month)", "$0"],
     ["On-site jobs (optional)", "Adzuna developer key", "$0"],
     ["Code hosting and CI", "GitHub + GitHub Actions", "$0"],
@@ -651,11 +957,12 @@ table([
 ], [45 * mm, 90 * mm, 33 * mm])
 SP(10)
 callout("<b>Quick start recap.</b> 1) Push the code to GitHub. 2) Create a Docker Space on Hugging Face. 3) Add the settings "
-        "block to README.md and push to the Space. 4) Optionally add a JSearch key for LinkedIn and Indeed jobs. 5) Add an UptimeRobot monitor. "
-        "6) Run the launch checklist, then share the link.")
+        "block to README.md and push to the Space. 4) Set CONTACT_EMAIL and, if you want income, the Razorpay test keys; "
+        "test a payment, then switch to live keys after activation. 5) Optionally add a JSearch key for LinkedIn and Indeed "
+        "jobs. 6) Add an UptimeRobot monitor. 7) Run the launch checklist, then share the link and the extension.")
 
 story.append(PageBreak())
-H1("10. What changed in version 1.1")
+H1("12. What changed in versions 1.1 and 2.0")
 P("Changes made after testing version 1.0 in real use:")
 table([
     ["Problem reported", "Cause found", "Fix"],
@@ -674,6 +981,24 @@ table([
     ["'India' showed US-only remote jobs", "Any remote job passed a location filter",
      "Only remote jobs open worldwide pass; city aliases added (Bangalore = Bengaluru, Gurgaon = Gurugram...)"],
 ], [42 * mm, 56 * mm, 70 * mm])
+H2("Version 2.0")
+table([
+    ["Request", "What was built"],
+    ["Skills were limited", "Custom skills only counted if they were in the built-in list, and profiles were capped at "
+                            "60-80 skills. Now up to 300 skills, added several at once; unknown skills are matched in job descriptions"],
+    ["Job descriptions", "Full descriptions with paragraphs and bullet points for every source, including SmartRecruiters "
+                         "(previously a one-line summary), shown on demand under each result"],
+    ["Clear experience match", "Required ranges are read ('3-5 years') and every result shows a verdict and sentence, "
+                               "plus a breakdown of skills, title and experience fit"],
+    ["More job portals", "33 more verified employers (186 in total, including Paytm, Snowflake, Perplexity, Nubank) and "
+                         "Hacker News 'Who is hiring?'. Workday, The Muse, Recruitee, Personio and Breezy were tested; see 3.4"],
+    ["Fill Workday forms faster", "DreamJob Autofill browser extension (section 4)"],
+    ["Payment gateway (Razorpay)", "DreamJob Pro with server-side orders, signature and amount checks, capture, restore, "
+                                   "refund-aware passes, webhooks, policy pages, and a full setup guide (section 5)"],
+    ["No errors, production-ready, no leaks", "CI import error fixed (pytest.ini); 34 tests; one crawler per server with "
+                                              "polite retries; snapshot write race fixed; CSP and security headers; stricter "
+                                              ".gitignore; .env.example rewritten so comments can't become secret values"],
+], [45 * mm, 123 * mm])
 
 doc = SimpleDocTemplate(str(OUT), pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm,
                         topMargin=22 * mm, bottomMargin=18 * mm,

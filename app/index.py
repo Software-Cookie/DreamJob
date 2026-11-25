@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import math
+import os
 import re
 import time
 from dataclasses import asdict, dataclass, field
@@ -20,7 +21,7 @@ log = logging.getLogger("dreamjob.index")
 MAX_AGE_DAYS = 31
 SOURCE_DEADLINE = 600  # seconds; hard cap for one source per refresh (first company-site crawl is the slowest)
 SNAPSHOT = settings.data_dir / "jobs_snapshot.json"
-SNAPSHOT_VERSION = 2
+SNAPSHOT_VERSION = 3  # 3: full descriptions and experience ranges
 
 
 @dataclass(slots=True)
@@ -47,6 +48,8 @@ class Job:
     vec: dict = field(default_factory=dict)  # tf-idf vector, rebuilt from terms
     title_norm: str = ""    # " senior backend engineer " - precomputed for fast phrase checks
     key: str = ""           # dedupe key
+    description: str = ""   # full plain-text description, paragraphs kept
+    req_years_max: int | None = None
 
     def __post_init__(self):
         if not self.title_norm:
@@ -57,7 +60,11 @@ class Job:
     def public(self) -> dict:
         return {k: getattr(self, k) for k in (
             "id", "source", "url", "title", "company", "location", "remote", "posted_at",
-            "salary", "job_type", "logo", "snippet")}
+            "salary", "job_type", "logo", "snippet", "description", "req_years", "req_years_max", "level")}
+
+    def haystack(self) -> str:
+        """Lower-case title, tags and description; searched for skills that are not in the skill list."""
+        return f"{self.title}\n{' '.join(self.tags)}\n{self.description}".lower()
 
 
 def featurize(d: dict) -> Job | None:
@@ -65,6 +72,7 @@ def featurize(d: dict) -> Job | None:
         return None  # a job without a trustworthy posting date can't be placed in a time window
     d["posted_at"] = min(float(d["posted_at"]), time.time())  # guard against clock skew at the source
     title, text, tags = d["title"], d.get("text", ""), d.get("tags", [])
+    req_lo, req_hi = nlp.required_years(text)
     skills = nlp.extract_skills(f"{title}\n{' , '.join(tags)}\n{text}")
     # skills in the title count extra: they are the core of the role
     for s in nlp.extract_skills(title):
@@ -74,10 +82,36 @@ def featurize(d: dict) -> Job | None:
         location=d.get("location", ""), remote=bool(d.get("remote")), posted_at=float(d["posted_at"]),
         salary=d.get("salary", ""), job_type=d.get("job_type", ""), logo=d.get("logo", ""),
         tags=tags[:8], snippet=_snippet(text), skills=dict(skills.most_common(40)),
-        family=nlp.title_family(title), level=nlp.level_from_title(title),
-        req_years=nlp.required_years(text), title_core=sorted(nlp.title_core(title)),
-        terms=nlp.term_counts(f"{title} {title} {' '.join(tags)} {text}"),
+        family=nlp.title_family(title), level=job_level(title, text, req_lo),
+        req_years=req_lo, req_years_max=req_hi, title_core=sorted(nlp.title_core(title)),
+        terms=nlp.term_counts(f"{title} {title} {' '.join(tags)} {text}"), description=text,
     )
+
+
+def job_level(title: str, text: str, req_years: int | None) -> str | None:
+    """Seniority from the title; if the title says nothing and no years are stated, from the description's wording."""
+    return nlp.level_from_title(title) or (None if req_years else nlp.level_from_text(text))
+
+
+def _crawler_lock():
+    """An exclusive lock on data/crawler.lock, released by the OS when the process exits. None if taken."""
+    try:
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+        f = open(settings.data_dir / "crawler.lock", "a+")
+    except OSError:
+        return None
+    try:
+        if os.name == "nt":
+            import msvcrt
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return f
+    except OSError:
+        f.close()
+        return None
 
 
 def _snippet(text: str, n: int = 260) -> str:
@@ -104,6 +138,19 @@ class JobIndex:
         self._inflight: dict[str, asyncio.Task] = {}
         self._client: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()
+        self._lockfile = None   # open file holding the crawler lock (this process crawls)
+        self._snap_mtime = 0.0  # snapshot version this process has loaded
+
+    async def _follow_snapshot(self):
+        """Non-crawling workers: load the crawler's snapshot whenever it is newer."""
+        try:
+            mtime = SNAPSHOT.stat().st_mtime
+        except OSError:
+            return
+        if mtime > self._snap_mtime:
+            self._snap_mtime = mtime
+            await asyncio.to_thread(self._load_snapshot)
+        self.refreshing = not self.jobs
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self):
@@ -112,6 +159,10 @@ class JobIndex:
             headers={"User-Agent": settings.user_agent, "Accept": "application/json"},
             limits=httpx.Limits(max_connections=40, max_keepalive_connections=20),
         )
+        try:
+            self._snap_mtime = SNAPSHOT.stat().st_mtime
+        except OSError:
+            pass
         await asyncio.to_thread(self._load_snapshot)
 
     async def stop(self):
@@ -119,8 +170,19 @@ class JobIndex:
             await self._client.aclose()
 
     async def run_forever(self):
-        """Background scheduler: each source refreshes on its own interval; slow ones never block others."""
+        """Background scheduler: each source refreshes on its own interval; slow ones never block others.
+
+        With several worker processes, only one of them (the holder of data/crawler.lock) talks to the
+        job sources. The others reload its snapshot when it changes, so each employer API is called once."""
         while True:
+            if self._lockfile is None:
+                self._lockfile = await asyncio.to_thread(_crawler_lock)
+                if self._lockfile is not None:
+                    log.info("this worker (pid %s) refreshes the job sources", os.getpid())
+            if self._lockfile is None:
+                await self._follow_snapshot()
+                await asyncio.sleep(30)
+                continue
             now = time.time()
             for name, (_fn, minutes) in FEEDS.items():
                 due = self._done_at.get(name, 0) + minutes * 60
@@ -203,13 +265,14 @@ class JobIndex:
         sources.KNOWN_JOB_IDS = {j.id for j in jobs}
 
     # ------------------------------------------------------------------ live search
-    async def live(self, queries: list[str], window: str, location: str, timeout: float) -> list[Job]:
+    async def live(self, queries: list[str], window: str, location: str, timeout: float,
+                   years: float | None = None, viewer: dict | None = None) -> list[Job]:
         """Run per-role searches; identical concurrent searches share one upstream call."""
         now = time.time()
         out: list[Job] = []
         waits = []
         for q in queries:
-            for key, (fn, ttl) in live_searches(q, window, location).items():
+            for key, (fn, ttl) in live_searches(q, window, location, years, viewer).items():
                 cached = self._live.get(key)
                 if cached and cached[0] > now:
                     out.extend(cached[1])
@@ -252,7 +315,7 @@ class JobIndex:
                        "done_at": self._done_at,
                        "by_source": {s: [{k: v for k, v in asdict(j).items() if k != "vec"} for j in lst]
                                      for s, lst in self.by_source.items()}}
-            tmp = SNAPSHOT.with_suffix(".tmp")
+            tmp = SNAPSHOT.with_suffix(f".{os.getpid()}.tmp")  # per process: no clash between workers
             tmp.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
             tmp.replace(SNAPSHOT)
         except OSError as e:
@@ -265,6 +328,10 @@ class JobIndex:
                 log.info("ignoring snapshot from an older version")
                 return
             self.by_source = {s: [Job(**d) for d in lst] for s, lst in payload["by_source"].items() if s in FEEDS}
+            for lst in self.by_source.values():  # re-derive experience fields so rule updates apply without a recrawl
+                for j in lst:
+                    j.req_years, j.req_years_max = nlp.required_years(j.description)
+                    j.level = job_level(j.title, j.description, j.req_years)
             self.status = {k: v for k, v in payload.get("status", {}).items() if k in FEEDS}
             self._done_at = {k: v for k, v in payload.get("done_at", {}).items() if k in FEEDS}
             self._rebuild()

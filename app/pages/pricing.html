@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pricing – {{BUSINESS_NAME}}</title>
+  <meta name="description" content="DreamJob is free. DreamJob Pro shows more matches for a one-time payment.">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=7">
+</head>
+<body>
+  <header class="header"><div class="header-inner">
+    <a class="brand" href="/"><img src="/static/logo.svg" width="28" height="28" alt=""><span>DreamJob</span></a>
+    <nav class="nav"><a href="/">Find jobs</a><a href="/autofill">Autofill</a></nav>
+  </div></header>
+  <main class="page">
+    <h1>Pricing</h1>
+    <p class="lead">Matching, filters and the autofill extension are free. Pro expands every search to more matches.</p>
+    <div class="plans">
+      <section class="plan">
+        <h2>Free</h2>
+        <p class="price">₹0</p>
+        <ul>
+          <li>Résumé analysis and ranked matches</li>
+          <li>Top 3 and Top 10 matches</li>
+          <li>All date filters, location and remote filters</li>
+          <li>Unlimited skills</li>
+          <li>Autofill extension for application forms</li>
+        </ul>
+      </section>
+      <section class="plan plan-pro">
+        <h2>DreamJob Pro</h2>
+        <p class="price">₹{{PRICE}} <span>for {{DAYS}} days</span></p>
+        <ul>
+          <li>Everything in Free</li>
+          <li>{{PRO_TOPS}} matches per search</li>
+          <li>One-time payment, no automatic renewal</li>
+          <li>UPI, cards, net banking and wallets via Razorpay</li>
+        </ul>
+        <a class="btn btn-primary btn-block" href="/?upgrade=1">Get Pro</a>
+      </section>
+    </div>
+    <h2>Questions</h2>
+    <h3>Do I need an account?</h3>
+    <p>No. After you pay, this browser remembers your pass. To use it on another device, choose “Restore access” and enter the payment ID from your Razorpay receipt email and the email you paid with.</p>
+    <h3>Can I get a refund?</h3>
+    <p>Yes, within 7 days of payment. See the <a href="/refunds">refund policy</a>.</p>
+    <h3>Is my card or UPI information stored?</h3>
+    <p>No. You pay on Razorpay's secure checkout. {{BUSINESS_NAME}} never sees your card, UPI PIN or bank details.</p>
+  </main>
+  <footer class="footer"><p><a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/refunds">Refunds</a> · <a href="/contact">Contact</a></p></footer>
+</body>
+</html>

@@ -2,28 +2,32 @@
 from __future__ import annotations
 
 import asyncio
+import html
+import io
 import logging
 import mimetypes
 import time
+import zipfile
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
-from . import nlp
+from . import __version__, nlp, payments
+from .companies import BOARDS
 from .config import settings
 from .index import index
-from .companies import BOARDS
 from .matcher import Profile, ResumeError, build_profile, rank, read_resume
-from .sources import enabled_sources
+from .sources import enabled_sources, live_portals
 
 # Some OSes (notably Windows) map .js to text/plain; browsers then refuse to run it.
 for _ext, _type in {".js": "application/javascript", ".css": "text/css", ".svg": "image/svg+xml"}.items():
@@ -31,26 +35,40 @@ for _ext, _type in {".js": "application/javascript", ".css": "text/css", ".svg":
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("dreamjob")
-STATIC = Path(__file__).resolve().parent.parent / "static"
+ROOT = Path(__file__).resolve().parent.parent
+STATIC = ROOT / "static"
+EXTENSION = ROOT / "extension"
 
 HOURS = {"24h": 24, "48h": 48, "72h": 72, "1w": 168, "1m": 720}
 TOPS = {3, 10, 20, 30}
+MAX_SKILLS = 300
+
+# Razorpay Checkout runs in an iframe from *.razorpay.com; everything else is served by DreamJob itself.
+CSP = ("default-src 'self'; script-src 'self' https://checkout.razorpay.com https://*.razorpay.com; "
+       "frame-src https://api.razorpay.com https://*.razorpay.com; connect-src 'self' https://*.razorpay.com; "
+       "img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; "
+       "base-uri 'self'; form-action 'self' https://api.razorpay.com; frame-ancestors 'none'")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await index.start()
     task = asyncio.create_task(index.run_forever())
+    if payments.enabled():
+        log.info("payments on (Razorpay %s mode), Pro: INR %s for %s days",
+                 "live" if settings.razorpay_key_id.startswith("rzp_live") else "test",
+                 settings.pro_price_inr, settings.pro_days)
     yield
     task.cancel()
     await index.stop()
 
 
-app = FastAPI(title="DreamJob", version="1.0.0", lifespan=lifespan,
+app = FastAPI(title="DreamJob", version=__version__, lifespan=lifespan,
               docs_url="/api/docs", redoc_url=None, openapi_url="/api/openapi.json")
 app.add_middleware(GZipMiddleware, minimum_size=800)
 if settings.cors_origins:
-    app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["GET", "POST"],
+                       allow_headers=["Content-Type", "X-DreamJob-Pass"])
 
 
 # ---------------------------------------------------------------------- rate limiting
@@ -66,32 +84,45 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "?"
 
 
-def _check_rate(request: Request):
+def _check_rate(request: Request, bucket: str = "search", limit: int | None = None):
     now = time.monotonic()
-    q = _hits[_client_ip(request)]
+    q = _hits[f"{bucket}|{_client_ip(request)}"]
     while q and now - q[0] > 60:
         q.popleft()
-    if len(q) >= settings.rate_limit_per_minute:
-        raise HTTPException(429, "Too many searches in a minute. Wait a moment and try again.")
+    if len(q) >= (limit or settings.rate_limit_per_minute):
+        raise HTTPException(429, "Too many requests in a minute. Wait a moment and try again.")
     q.append(now)
     if len(_hits) > 20000:
         _hits.clear()
 
 
+def _viewer(request: Request) -> dict:
+    """The visitor's IP and browser, which some partner APIs (Careerjet) require with each search."""
+    return {"ip": _client_ip(request), "ua": request.headers.get("user-agent", "")[:300]}
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     resp = await call_next(request)
-    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
-    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    h = resp.headers
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    h.setdefault("X-Frame-Options", "DENY")
+    h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(self \"https://api.razorpay.com\")")
+    h.setdefault("Strict-Transport-Security", "max-age=31536000")
+    if h.get("content-type", "").startswith("text/html"):
+        h.setdefault("Content-Security-Policy", CSP)
     if request.url.path.startswith("/static/"):
-        resp.headers.setdefault("Cache-Control", "public, max-age=3600")
+        h.setdefault("Cache-Control", "public, max-age=3600")
+    elif request.url.path.startswith("/api/"):
+        h.setdefault("Cache-Control", "no-store")
     return resp
 
 
 # ---------------------------------------------------------------------- models
 class ProfileIn(BaseModel):
     titles: list[str] = Field(default_factory=list, max_length=6)
-    skills: list[str] = Field(default_factory=list, max_length=80)
+    skills: list[str] = Field(default_factory=list, max_length=MAX_SKILLS)
     years: float = Field(0, ge=0, le=50)
     level: str | None = None
     terms: dict[str, int] = Field(default_factory=dict)
@@ -105,7 +136,13 @@ class ProfileIn(BaseModel):
     @field_validator("skills")
     @classmethod
     def _skills(cls, v):
-        return [s.strip()[:60] for s in v if s and s.strip()]
+        out, seen = [], set()
+        for s in v:
+            s = " ".join((s or "").split())[:60]
+            if s and s.lower() not in seen:
+                seen.add(s.lower())
+                out.append(s)
+        return out
 
     @field_validator("terms")
     @classmethod
@@ -125,10 +162,45 @@ class MatchIn(BaseModel):
     top: int = 10
     location: str = Field("", max_length=80)
     remote_only: bool = False
+    exp_match: bool = True
+
+
+class VerifyIn(BaseModel):
+    razorpay_order_id: str = Field(..., min_length=6, max_length=64, pattern=r"^order_[A-Za-z0-9]+$")
+    razorpay_payment_id: str = Field(..., min_length=6, max_length=64, pattern=r"^pay_[A-Za-z0-9]+$")
+    razorpay_signature: str = Field(..., min_length=10, max_length=256, pattern=r"^[a-f0-9]+$")
+
+
+class RestoreIn(BaseModel):
+    payment_id: str = Field(..., min_length=6, max_length=64, pattern=r"^pay_[A-Za-z0-9]+$")
+    email: str = Field(..., min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 # ---------------------------------------------------------------------- core
-async def _match(profile: Profile, window: str, top: int, location: str, remote_only: bool) -> dict:
+async def _require_pro(top: int, request: Request):
+    if not payments.enabled() or top not in settings.pro_tops:
+        return
+    if not await payments.check_pass(request.headers.get("x-dreamjob-pass")):
+        tops = " and ".join(f"Top {t}" for t in sorted(settings.pro_tops))
+        raise HTTPException(402, f"{tops} are part of DreamJob Pro.")
+
+
+async def _read_upload(file: UploadFile | None, text: str) -> str:
+    if file is not None and file.filename:
+        data = await file.read(settings.max_upload_mb * 1024 * 1024 + 1)
+        if len(data) > settings.max_upload_mb * 1024 * 1024:
+            raise HTTPException(413, f"The file is larger than {settings.max_upload_mb} MB. Upload a smaller file.")
+        try:
+            return await run_in_threadpool(read_resume, file.filename, data)
+        except ResumeError as e:
+            raise HTTPException(422, str(e))
+    if len(text.strip()) >= 80:
+        return text[:60000]
+    raise HTTPException(422, "Add your résumé: upload a file or paste at least a few lines of text.")
+
+
+async def _match(profile: Profile, window: str, top: int, location: str, remote_only: bool, exp_match: bool = True,
+                 viewer: dict | None = None) -> dict:
     if top not in TOPS:
         raise HTTPException(422, "top must be 3, 10, 20 or 30")
     t0 = time.perf_counter()
@@ -138,15 +210,20 @@ async def _match(profile: Profile, window: str, top: int, location: str, remote_
             if index.jobs:
                 break
             await asyncio.sleep(0.5)
-    live = (await index.live(profile.queries, window, location, settings.live_search_timeout)
-            if profile.queries else [])
+    # deep search: several searches per résumé on every connected portal; identical searches are shared and cached
+    queries = profile.search_queries(settings.deep_queries)
+    timeout = settings.deep_search_timeout if live_portals() else settings.live_search_timeout
+    live = (await index.live(queries, window, location, timeout, years=profile.years, viewer=viewer)
+            if queries else [])
     pool = index.jobs + live  # index first: on duplicates, the employer's own posting wins
+    stats: dict = {}
     results, considered, by_source = await run_in_threadpool(
-        rank, profile, pool, index.idf, index.default_idf,
-        hours=HOURS[window], top=top, location=location, remote_only=remote_only)
+        lambda: rank(profile, pool, index.idf, index.default_idf, hours=HOURS[window], top=top,
+                     location=location, remote_only=remote_only, exp_match=exp_match, stats=stats))
     return {"profile": profile.public(), "results": results, "considered": considered,
             "by_source": by_source, "window": window, "top": top, "location": location,
-            "remote_only": remote_only, "took_ms": round((time.perf_counter() - t0) * 1000),
+            "remote_only": remote_only, "exp_match": exp_match,
+            "hidden_experience": stats.get("hidden_experience", 0), "took_ms": round((time.perf_counter() - t0) * 1000),
             "index": {"jobs": len(index.jobs), "last_refresh": index.last_refresh}}
 
 
@@ -157,30 +234,82 @@ async def analyze(request: Request,
                   window: Literal["24h", "48h", "72h", "1w", "1m"] = Form("1w"),
                   top: int = Form(10),
                   location: str = Form("", max_length=80),
-                  remote_only: bool = Form(False)):
+                  remote_only: bool = Form(False),
+                  exp_match: bool = Form(True)):
     """Upload a résumé (PDF/DOCX/TXT) or paste text; returns the parsed profile and ranked jobs."""
     _check_rate(request)
-    if file is not None and file.filename:
-        data = await file.read(settings.max_upload_mb * 1024 * 1024 + 1)
-        if len(data) > settings.max_upload_mb * 1024 * 1024:
-            raise HTTPException(413, f"The file is larger than {settings.max_upload_mb} MB. Upload a smaller file.")
-        try:
-            resume_text = await run_in_threadpool(read_resume, file.filename, data)
-        except ResumeError as e:
-            raise HTTPException(422, str(e))
-    elif len(text.strip()) >= 80:
-        resume_text = text[:60000]
-    else:
-        raise HTTPException(422, "Add your résumé: upload a file or paste at least a few lines of text.")
+    await _require_pro(top, request)
+    resume_text = await _read_upload(file, text)
     profile = await run_in_threadpool(build_profile, resume_text)
-    return await _match(profile, window, top, location, remote_only)
+    return await _match(profile, window, top, location, remote_only, exp_match, _viewer(request))
 
 
 @app.post("/api/match")
 async def match(body: MatchIn, request: Request):
     """Re-rank with an edited profile (no re-upload needed)."""
     _check_rate(request)
-    return await _match(body.profile.to_profile(), body.window, body.top, body.location, body.remote_only)
+    await _require_pro(body.top, request)
+    return await _match(body.profile.to_profile(), body.window, body.top, body.location, body.remote_only, body.exp_match,
+                        _viewer(request))
+
+
+@app.post("/api/profile/extract")
+async def profile_extract(request: Request, file: UploadFile | None = File(None), text: str = Form("")):
+    """Contact details, work history, education and skills from a résumé, for the autofill extension.
+    Nothing is stored: the file is read in memory and discarded."""
+    _check_rate(request, "extract", 10)
+    resume_text = await _read_upload(file, text)
+
+    def work():
+        p = build_profile(resume_text)
+        jobs, schools = nlp.extract_history(resume_text)
+        return {"contact": nlp.extract_contact(resume_text), "experience": jobs, "education": schools,
+                "skills": p.skills, "titles": p.titles, "years": p.years, "location": p.location}
+    return await run_in_threadpool(work)
+
+
+# ---------------------------------------------------------------------- payments
+@app.post("/api/pay/order")
+async def pay_order(request: Request):
+    _check_rate(request, "pay", 10)
+    return await payments.create_order()
+
+
+@app.post("/api/pay/verify")
+async def pay_verify(body: VerifyIn, request: Request):
+    _check_rate(request, "pay", 10)
+    return await payments.verify(body.razorpay_order_id, body.razorpay_payment_id, body.razorpay_signature)
+
+
+@app.post("/api/pay/restore")
+async def pay_restore(body: RestoreIn, request: Request):
+    _check_rate(request, "restore", 5)
+    return await payments.restore(body.payment_id, body.email)
+
+
+@app.post("/api/pay/status")
+async def pay_status(request: Request):
+    data = await payments.check_pass(request.headers.get("x-dreamjob-pass"))
+    return {"active": bool(data), "expires_at": data["exp"] if data else None}
+
+
+@app.post("/api/pay/webhook", include_in_schema=False)
+async def pay_webhook(request: Request):
+    raw = await request.body()
+    if len(raw) > 1_000_000:
+        raise HTTPException(413, "Payload too large")
+    ok = payments.handle_webhook(raw, request.headers.get("x-razorpay-signature", ""),
+                                 request.headers.get("x-razorpay-event-id", ""))
+    if not ok:
+        raise HTTPException(400, "Invalid signature")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------- info
+@app.get("/api/config")
+async def config():
+    return {"version": __version__, "payments": payments.public_config(), "live_portals": live_portals(),
+            "business_name": settings.business_name, "contact_email": settings.contact_email}
 
 
 @app.get("/api/stats")
@@ -190,7 +319,7 @@ async def stats():
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "jobs": len(index.jobs)}
+    return {"status": "ok", "jobs": len(index.jobs), "version": __version__}
 
 
 @app.get("/api/skills")
@@ -203,12 +332,66 @@ async def http_error(_req: Request, exc: HTTPException):
     return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
 
 
+@app.exception_handler(payments.PaymentError)
+async def payment_error(_req: Request, exc: payments.PaymentError):
+    return JSONResponse({"error": str(exc)}, status_code=exc.status)
+
+
+# ---------------------------------------------------------------------- pages
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
 @app.get("/", include_in_schema=False)
 async def home():
     return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+
+
+_PAGES = {"terms": "terms.html", "privacy": "privacy.html", "refunds": "refunds.html",
+          "contact": "contact.html", "pricing": "pricing.html", "autofill": "autofill.html"}
+
+
+def _render(name: str) -> str:
+    """Fills the business details into a page template (values are HTML-escaped)."""
+    tpl = (ROOT / "app" / "pages" / _PAGES[name]).read_text(encoding="utf-8")
+    email = settings.contact_email
+    values = {
+        "BUSINESS_NAME": settings.business_name, "PRICE": str(settings.pro_price_inr), "DAYS": str(settings.pro_days),
+        "PRO_TOPS": " and ".join(f"Top {t}" for t in sorted(settings.pro_tops)) or "Top 20 and Top 30",
+        "ADDRESS": settings.business_address or "Address available on request by email.",
+        "UPDATED": date(2026, 11, 25).strftime("%d %B %Y"), "VERSION": __version__,
+    }
+    out = tpl
+    for k, v in values.items():
+        out = out.replace("{{" + k + "}}", html.escape(v))
+    link = f'<a href="mailto:{html.escape(email)}">{html.escape(email)}</a>' if email else "the contact address shown on this site once it is set"
+    return out.replace("{{EMAIL_LINK}}", link)
+
+
+def _page_route(name: str):
+    async def page():
+        return HTMLResponse(_render(name), headers={"Cache-Control": "no-cache"})
+    return page
+
+
+for _name in _PAGES:
+    app.add_api_route(f"/{_name}", _page_route(_name), methods=["GET"], include_in_schema=False)
+
+_zip_cache: bytes | None = None
+
+
+@app.get("/download/dreamjob-autofill.zip", include_in_schema=False)
+async def extension_zip():
+    """The autofill browser extension, zipped from the extension/ folder."""
+    global _zip_cache
+    if _zip_cache is None:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for f in sorted(EXTENSION.rglob("*")):
+                if f.is_file() and not f.name.startswith(".") and f.suffix not in (".pem", ".crx", ".zip"):
+                    z.write(f, Path("dreamjob-autofill") / f.relative_to(EXTENSION))
+        _zip_cache = buf.getvalue()
+    return Response(_zip_cache, media_type="application/zip",
+                    headers={"Content-Disposition": 'attachment; filename="dreamjob-autofill.zip"'})
 
 
 @app.get("/favicon.ico", include_in_schema=False)

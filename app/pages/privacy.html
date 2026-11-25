@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy – {{BUSINESS_NAME}}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=7">
+</head>
+<body>
+  <header class="header"><div class="header-inner">
+    <a class="brand" href="/"><img src="/static/logo.svg" width="28" height="28" alt=""><span>DreamJob</span></a>
+    <nav class="nav"><a href="/">Find jobs</a><a href="/pricing">Pricing</a></nav>
+  </div></header>
+  <main class="page">
+    <h1>Privacy Policy</h1>
+    <p class="muted">Last updated {{UPDATED}}</p>
+    <p>{{BUSINESS_NAME}} collects as little as possible. This page explains what happens to your data on the DreamJob website and in the DreamJob Autofill extension.</p>
+
+    <h2>Your résumé</h2>
+    <p>When you upload or paste a résumé, the server reads it in memory to find your skills, job titles and years of experience, ranks jobs, and then discards it. The file and its text are not saved to disk, put in a database or used to train any model. The skills and role it finds are kept in your browser tab so you can change filters without uploading again.</p>
+
+    <h2>Stored in your browser</h2>
+    <p>Your filter choices and, if you buy Pro, your Pro pass are saved in your browser's local storage. Clearing site data removes them.</p>
+
+    <h2>Payments</h2>
+    <p>Payments are handled by Razorpay. You enter card, UPI or bank details on Razorpay's checkout, never on DreamJob. We receive the payment ID and confirm with Razorpay that the payment succeeded. When you restore a purchase, we check the email you enter against the one Razorpay holds for that payment. We do not keep a customer database. Razorpay's privacy policy applies to the data you give Razorpay.</p>
+
+    <h2>Autofill extension</h2>
+    <p>The profile you save in the extension (name, contact details, work history, answers and an optional résumé file) is stored only in your browser using the extension storage on your device. It is not sent to us. It is used only when you press “Fill this page” on a form. If you use “Import from résumé”, the file is sent once to the DreamJob server you set in the extension, read in memory as described above, and discarded.</p>
+
+    <h2>Logs and security</h2>
+    <p>To stop abuse, the server counts requests per IP address for one minute in memory. Hosting providers may keep standard access logs. Connections use HTTPS.</p>
+
+    <h2>Your rights</h2>
+    <p>Because we do not store your résumé or an account, there is usually nothing to delete. For any privacy question or request under India's Digital Personal Data Protection Act, 2023, write to {{EMAIL_LINK}}.</p>
+  </main>
+  <footer class="footer"><p><a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/refunds">Refunds</a> · <a href="/contact">Contact</a></p></footer>
+</body>
+</html>

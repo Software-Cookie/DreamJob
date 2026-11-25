@@ -38,9 +38,29 @@ class Settings:
     adzuna_country: str = os.getenv("ADZUNA_COUNTRY", "in").lower()
     jooble_key: str = os.getenv("JOOBLE_API_KEY", "")
     jooble_host: str = os.getenv("JOOBLE_HOST", "jooble.org")
+    careerjet_key: str = os.getenv("CAREERJET_API_KEY", "")                   # free publisher key
+    careerjet_locale: str = os.getenv("CAREERJET_LOCALE", "en_IN")
+    jsearch_pages: int = max(1, min(_int("JSEARCH_PAGES", 1), 5))             # each extra page uses quota
+    deep_queries: int = max(1, min(_int("DEEP_QUERIES", 3), 5))               # searches per résumé per source
+    deep_search_timeout: float = float(os.getenv("DEEP_SEARCH_TIMEOUT", "20"))  # seconds to wait for portals
+
+    # Payments (Razorpay). Off unless both keys are set. Secrets come from the environment only.
+    razorpay_key_id: str = os.getenv("RAZORPAY_KEY_ID", "").strip()
+    razorpay_key_secret: str = os.getenv("RAZORPAY_KEY_SECRET", "").strip()
+    razorpay_webhook_secret: str = os.getenv("RAZORPAY_WEBHOOK_SECRET", "").strip()
+    pass_secret: str = os.getenv("PASS_SECRET", "").strip()           # optional: signs Pro passes
+    pro_price_inr: int = max(1, _int("PRO_PRICE_INR", 99))
+    pro_days: int = max(1, _int("PRO_DAYS", 30))
+    pro_tops: frozenset = frozenset(int(x) for x in _list("PRO_TOPS", "20,30") if x.isdigit())
+
+    # Shown on the Terms, Privacy, Refund and Contact pages (Razorpay and buyers need these).
+    business_name: str = os.getenv("BUSINESS_NAME", "DreamJob")
+    contact_email: str = os.getenv("CONTACT_EMAIL", "")
+    business_address: str = os.getenv("BUSINESS_ADDRESS", "")
+    site_url: str = os.getenv("SITE_URL", "").rstrip("/")
 
     data_dir: Path = Path(os.getenv("DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
-    user_agent: str = os.getenv("USER_AGENT", "Mozilla/5.0 (compatible; DreamJob/1.0; job matching)")
+    user_agent: str = os.getenv("USER_AGENT", "Mozilla/5.0 (compatible; DreamJob/2.0; job matching)")
     cors_origins: list = field(default_factory=lambda: [o for o in os.getenv("CORS_ORIGINS", "").split(",") if o])
 
 

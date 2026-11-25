@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>DreamJob Autofill</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="popup">
+  <header class="brand"><img src="icons/icon-48.png" width="24" height="24" alt=""><b>DreamJob Autofill</b></header>
+  <p class="muted" id="who">Loading…</p>
+  <button type="button" class="btn btn-primary btn-block" id="fill">Fill this page</button>
+  <label class="check"><input type="checkbox" id="overwrite"> Replace fields that already have a value</label>
+  <p class="result" id="result" role="status" hidden></p>
+  <div class="row">
+    <button type="button" class="btn btn-secondary" id="edit">Edit profile</button>
+    <span class="muted small" id="shortcut">Shortcut: Alt+Shift+F</span>
+  </div>
+  <p class="muted small">It fills fields only. Review everything, then submit yourself.</p>
+  <script src="popup.js"></script>
+</body>
+</html>

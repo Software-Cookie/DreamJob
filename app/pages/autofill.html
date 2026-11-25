@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Autofill extension – {{BUSINESS_NAME}}</title>
+  <meta name="description" content="Fill Workday, Greenhouse, Lever and other job applications from one saved profile.">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css?v=7">
+</head>
+<body>
+  <header class="header"><div class="header-inner">
+    <a class="brand" href="/"><img src="/static/logo.svg" width="28" height="28" alt=""><span>DreamJob</span></a>
+    <nav class="nav"><a href="/">Find jobs</a><a href="/pricing">Pricing</a></nav>
+  </div></header>
+  <main class="page">
+    <h1>Stop typing the same application again</h1>
+    <p class="lead">DreamJob Autofill is a free browser extension for Chrome and Edge. Save your details once. On any application form, click <b>Fill with DreamJob</b> or press <kbd>Alt+Shift+F</kbd>, and your name, contact details, address, links, work history, education, common answers and résumé go into the right fields.</p>
+    <p><a class="btn btn-primary" href="/download/dreamjob-autofill.zip">Download the extension (v{{VERSION}})</a></p>
+
+    <h2>Works best on</h2>
+    <p>Workday (including multi-step applications), Greenhouse, Lever, Ashby, SmartRecruiters, Workable, iCIMS, SuccessFactors, Taleo, Recruitee, Breezy, Personio, BambooHR and Jobvite. On other sites, open the extension and choose <b>Fill this page</b>.</p>
+
+    <h2>Install in 1 minute</h2>
+    <ol>
+      <li>Download the zip above and unzip it. You get a folder named <code>dreamjob-autofill</code>.</li>
+      <li>Open <code>chrome://extensions</code> in Chrome (or <code>edge://extensions</code> in Edge).</li>
+      <li>Turn on <b>Developer mode</b> (top right in Chrome, left side in Edge).</li>
+      <li>Click <b>Load unpacked</b> and choose the <code>dreamjob-autofill</code> folder.</li>
+      <li>Your profile page opens. Choose your résumé, enter this site's address (<span id="origin">this site</span>) and click <b>Import details from résumé</b>. Check the details and click <b>Save profile</b>.</li>
+      <li>Pin the extension from the puzzle-piece menu so it is one click away.</li>
+    </ol>
+
+    <h2>How it behaves</h2>
+    <ul>
+      <li>It only fills empty fields, unless you tick “Replace fields that already have a value”.</li>
+      <li>It never clicks Submit, Next or consent boxes. Filled fields get a green outline so you can review them.</li>
+      <li>On Workday, fill each step as it appears. Missing work experience and education blocks are added for you.</li>
+      <li>Questions it doesn't know are left empty. Add your own answers in the profile, for example “notice period” → “30 days”.</li>
+    </ul>
+
+    <h2>Privacy</h2>
+    <p>Your profile and résumé are stored only in your browser. The extension only reads a page when you ask it to fill one. Details are in the <a href="/privacy">privacy policy</a>.</p>
+  </main>
+  <footer class="footer"><p><a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/refunds">Refunds</a> · <a href="/contact">Contact</a></p></footer>
+  <script src="/static/origin.js"></script>
+</body>
+</html>

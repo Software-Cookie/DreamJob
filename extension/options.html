@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DreamJob Autofill – Your profile</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="options">
+  <header class="top">
+    <div class="top-inner">
+      <span class="brand"><img src="icons/icon-48.png" width="28" height="28" alt=""><b>DreamJob Autofill</b></span>
+      <div class="save">
+        <span class="muted small" id="saveState" role="status"></span>
+        <button type="button" class="btn btn-primary" id="save">Save profile</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <h1>Your application profile</h1>
+    <p class="muted">Fill this in once. On any application form, click <b>Fill with DreamJob</b> (or press <kbd>Alt+Shift+F</kbd>) and these answers go into the matching fields. Everything stays in this browser. Nothing is sent anywhere unless you use “Import from résumé”.</p>
+
+    <section class="card">
+      <h2>1. Start from your résumé</h2>
+      <p class="muted small">Choose your résumé to attach it to applications automatically. “Import details” also reads your name, contact details, work history, education and skills from it, using your DreamJob server.</p>
+      <div class="grid2">
+        <label class="field"><span class="label">Résumé file (PDF or DOCX, up to 5 MB)</span><input type="file" id="resumeFile" accept=".pdf,.doc,.docx,.txt"></label>
+        <label class="field"><span class="label">DreamJob server address</span><input type="url" id="server" placeholder="https://your-dreamjob-site.hf.space"></label>
+      </div>
+      <p class="small" id="resumeInfo"></p>
+      <div class="row"><button type="button" class="btn btn-secondary" id="importBtn">Import details from résumé</button><span class="small" id="importState" role="status"></span></div>
+    </section>
+
+    <section class="card">
+      <h2>2. Personal details</h2>
+      <div class="grid3">
+        <label class="field"><span class="label">First name</span><input data-k="first_name" autocomplete="given-name"></label>
+        <label class="field"><span class="label">Middle name</span><input data-k="middle_name"></label>
+        <label class="field"><span class="label">Last name</span><input data-k="last_name" autocomplete="family-name"></label>
+        <label class="field"><span class="label">Preferred name</span><input data-k="preferred_name"></label>
+        <label class="field"><span class="label">Email</span><input data-k="email" type="email" autocomplete="email"></label>
+        <label class="field"><span class="label">Phone number</span><input data-k="phone" type="tel" autocomplete="tel-national" placeholder="98765 43210"></label>
+        <label class="field"><span class="label">Phone country code</span><input data-k="phone_country_code" placeholder="+91 or India (+91)"></label>
+        <label class="field"><span class="label">Phone type</span><select data-k="phone_type"><option value="">Not set</option><option>Mobile</option><option>Home</option><option>Work</option></select></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>3. Address</h2>
+      <div class="grid3">
+        <label class="field span2"><span class="label">Address line 1</span><input data-k="address1" autocomplete="address-line1"></label>
+        <label class="field"><span class="label">Address line 2</span><input data-k="address2" autocomplete="address-line2"></label>
+        <label class="field"><span class="label">City</span><input data-k="city" autocomplete="address-level2"></label>
+        <label class="field"><span class="label">State</span><input data-k="state" autocomplete="address-level1"></label>
+        <label class="field"><span class="label">PIN / postal code</span><input data-k="postal_code" autocomplete="postal-code"></label>
+        <label class="field"><span class="label">Country</span><input data-k="country" autocomplete="country-name" placeholder="India"></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4. Links</h2>
+      <div class="grid3">
+        <label class="field"><span class="label">LinkedIn</span><input data-k="linkedin" type="url" placeholder="https://www.linkedin.com/in/…"></label>
+        <label class="field"><span class="label">GitHub</span><input data-k="github" type="url"></label>
+        <label class="field"><span class="label">Portfolio or website</span><input data-k="website" type="url"></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5. Common questions</h2>
+      <div class="grid3">
+        <label class="field"><span class="label">Total years of experience</span><input data-k="years" type="number" min="0" max="50" step="0.5"></label>
+        <label class="field"><span class="label">Current salary / CTC</span><input data-k="current_salary" placeholder="e.g. 8 LPA"></label>
+        <label class="field"><span class="label">Expected salary / CTC</span><input data-k="expected_salary" placeholder="e.g. 12 LPA"></label>
+        <label class="field"><span class="label">Notice period</span><input data-k="notice_period" placeholder="e.g. 30 days"></label>
+        <label class="field"><span class="label">How did you hear about us?</span><input data-k="source" placeholder="e.g. LinkedIn"></label>
+        <span></span>
+        <label class="field"><span class="label">Authorised to work in the job's country?</span><select data-k="work_authorized"><option value="">Ask me each time</option><option>Yes</option><option>No</option></select></label>
+        <label class="field"><span class="label">Need visa sponsorship?</span><select data-k="needs_sponsorship"><option value="">Ask me each time</option><option>Yes</option><option>No</option></select></label>
+        <label class="field"><span class="label">Willing to relocate?</span><select data-k="willing_to_relocate"><option value="">Ask me each time</option><option>Yes</option><option>No</option></select></label>
+        <label class="field"><span class="label">18 or older?</span><select data-k="over_18"><option value="">Ask me each time</option><option>Yes</option><option>No</option></select></label>
+        <label class="field"><span class="label">Worked for the company before?</span><select data-k="previously_employed"><option value="">Ask me each time</option><option>Yes</option><option>No</option></select></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>6. Work experience</h2><button type="button" class="btn btn-secondary" data-add="experience">Add job</button></div>
+      <p class="muted small">Most recent first. On Workday, missing experience blocks are added for you.</p>
+      <div id="experience" class="list"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>7. Education</h2><button type="button" class="btn btn-secondary" data-add="education">Add education</button></div>
+      <div id="education" class="list"></div>
+    </section>
+
+    <section class="card">
+      <h2>8. Summary and cover letter</h2>
+      <label class="field"><span class="label">Short professional summary</span><textarea data-k="summary" rows="4"></textarea></label>
+      <label class="field"><span class="label">Cover letter (used when a form has a cover letter text box)</span><textarea data-k="cover_letter" rows="6"></textarea></label>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>9. Your own answers</h2><button type="button" class="btn btn-secondary" data-add="answers">Add answer</button></div>
+      <p class="muted small">For questions that keep coming up. If a field's question contains the words you enter, DreamJob uses your answer. These come before everything else.</p>
+      <div id="answers" class="list"></div>
+    </section>
+
+    <section class="card">
+      <h2>10. Voluntary self-identification (optional)</h2>
+      <p class="muted small">Leave these empty and DreamJob never fills them. If you want them filled, write the option exactly as forms show it, for example “Decline to self-identify”.</p>
+      <div class="grid2">
+        <label class="field"><span class="label">Gender</span><input data-k="gender"></label>
+        <label class="field"><span class="label">Race / ethnicity</span><input data-k="ethnicity"></label>
+        <label class="field"><span class="label">Veteran status</span><input data-k="veteran"></label>
+        <label class="field"><span class="label">Disability status</span><input data-k="disability"></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>11. Settings and backup</h2>
+      <label class="check"><input type="checkbox" id="setButton"> Show the “Fill with DreamJob” button on job sites</label>
+      <label class="check"><input type="checkbox" id="setSections"> Add missing work experience and education blocks before filling</label>
+      <p class="small muted" id="hiddenSites"></p>
+      <div class="row">
+        <button type="button" class="btn btn-secondary" id="exportBtn">Download backup</button>
+        <label class="btn btn-secondary">Restore backup<input type="file" id="importJson" accept=".json" hidden></label>
+        <button type="button" class="btn btn-danger" id="wipe">Delete all my data</button>
+      </div>
+    </section>
+  </main>
+
+  <template id="tpl-experience">
+    <div class="item">
+      <div class="grid3">
+        <label class="field"><span class="label">Job title</span><input data-f="title"></label>
+        <label class="field"><span class="label">Company</span><input data-f="company"></label>
+        <label class="field"><span class="label">Location</span><input data-f="location"></label>
+        <div class="field"><span class="label">Start</span><div class="pair"><select data-f="start.month" aria-label="Start month"></select><input data-f="start.year" type="number" min="1970" max="2100" placeholder="Year" aria-label="Start year"></div></div>
+        <div class="field"><span class="label">End</span><div class="pair"><select data-f="end.month" aria-label="End month"></select><input data-f="end.year" type="number" min="1970" max="2100" placeholder="Year" aria-label="End year"></div></div>
+        <label class="check"><input type="checkbox" data-f="current"> I work here now</label>
+        <label class="field span3"><span class="label">What you did</span><textarea data-f="description" rows="3"></textarea></label>
+      </div>
+      <button type="button" class="text-btn danger" data-remove>Remove</button>
+    </div>
+  </template>
+  <template id="tpl-education">
+    <div class="item">
+      <div class="grid3">
+        <label class="field"><span class="label">School or university</span><input data-f="school"></label>
+        <label class="field"><span class="label">Degree</span><input data-f="degree" placeholder="e.g. B.Tech"></label>
+        <label class="field"><span class="label">Field of study</span><input data-f="field" placeholder="e.g. Computer Science"></label>
+        <div class="field"><span class="label">Start</span><div class="pair"><select data-f="start.month" aria-label="Start month"></select><input data-f="start.year" type="number" min="1970" max="2100" placeholder="Year" aria-label="Start year"></div></div>
+        <div class="field"><span class="label">End</span><div class="pair"><select data-f="end.month" aria-label="End month"></select><input data-f="end.year" type="number" min="1970" max="2100" placeholder="Year" aria-label="End year"></div></div>
+        <label class="field"><span class="label">Grade / GPA</span><input data-f="gpa"></label>
+      </div>
+      <button type="button" class="text-btn danger" data-remove>Remove</button>
+    </div>
+  </template>
+  <template id="tpl-answers">
+    <div class="item item-row">
+      <label class="field"><span class="label">When the question contains</span><input data-f="q" placeholder="e.g. notice period"></label>
+      <label class="field"><span class="label">Answer</span><input data-f="a" placeholder="e.g. 30 days"></label>
+      <button type="button" class="text-btn danger" data-remove>Remove</button>
+    </div>
+  </template>
+  <script src="options.js"></script>
+</body>
+</html>

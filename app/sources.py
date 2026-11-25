@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import html as htmlmod
 import logging
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -27,11 +28,12 @@ import httpx
 
 from .companies import BOARDS
 from .config import settings
-from .nlp import strip_html
+from .nlp import strip_html, title_family
 
 log = logging.getLogger("dreamjob.sources")
 
 # window -> (JSearch date_posted, max days old)
+DESC_LIMIT = 8000  # characters of description kept per job
 WINDOW_DAYS = {"24h": 1, "48h": 2, "72h": 3, "1w": 7, "1m": 31}
 JSEARCH_DATE = {"24h": "today", "48h": "3days", "72h": "3days", "1w": "week", "1m": "month"}
 
@@ -75,8 +77,8 @@ def _salary(lo, hi, cur="") -> str:
 
 
 def _job(**kw) -> dict:
-    desc = strip_html(kw.pop("description", "") or "")
-    kw["text"] = desc[:6000]
+    desc = strip_html(kw.pop("description", "") or "", keep_lines=True)
+    kw["text"] = desc[:DESC_LIMIT]
     kw["tags"] = [str(t) for t in (kw.get("tags") or []) if t][:20]
     kw["title"] = strip_html(kw.get("title") or "")[:160]
     kw["company"] = strip_html(kw.get("company") or "")[:120]
@@ -186,7 +188,7 @@ async def jobicy(client, count: int = 100) -> list[dict]:
 
 
 # =========================================================================== company career boards
-_GH_TEXT: dict[str, str] = {}  # greenhouse job id -> description text (descriptions rarely change)
+_GH_TEXT: dict[str, str] = {}  # job id -> description HTML, fetched once (descriptions rarely change)
 KNOWN_JOB_IDS: set[str] = set()  # ids already in the index; their descriptions are not downloaded again
 
 
@@ -200,7 +202,7 @@ async def greenhouse(client, slug: str, name: str, sem: asyncio.Semaphore) -> li
             try:
                 async with sem:
                     d = await _get_json(client, f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{jid}")
-                _GH_TEXT[jid] = strip_html(htmlmod.unescape(d.get("content") or ""))[:6000]
+                _GH_TEXT[jid] = htmlmod.unescape(d.get("content") or "")[:DESC_LIMIT * 2]
             except Exception:
                 return ""
         return _GH_TEXT[jid]
@@ -226,12 +228,12 @@ async def lever(client, slug: str, name: str, _sem=None) -> list[dict]:
         if not _recent(posted):
             continue
         cat = j.get("categories") or {}
-        lists = " ".join(f"{l.get('text','')} {strip_html(l.get('content',''))}" for l in (j.get("lists") or []))
+        lists = "".join(f"<h3>{l.get('text','')}</h3><ul>{l.get('content','')}</ul>" for l in (j.get("lists") or []))
         out.append(_job(
             id=f"lever:{slug}:{j.get('id')}", source=f"{name} careers", url=j.get("hostedUrl", ""),
             title=j.get("text"), company=name, location=cat.get("location") or ", ".join(cat.get("allLocations") or []),
             remote=(j.get("workplaceType") == "remote"), posted_at=posted,
-            description=f"{j.get('descriptionPlain','')} {lists} {j.get('additionalPlain','')}",
+            description=f"{j.get('description') or j.get('descriptionPlain','')}{lists}<p>{j.get('additional') or j.get('additionalPlain','')}</p>",
             tags=[cat.get("team", ""), cat.get("department", "")], job_type=cat.get("commitment") or "",
         ))
     return out
@@ -249,13 +251,31 @@ async def ashby(client, slug: str, name: str, _sem=None) -> list[dict]:
             id=f"ashby:{slug}:{j.get('id')}", source=f"{name} careers", url=j.get("jobUrl") or j.get("applyUrl", ""),
             title=j.get("title"), company=name, location=", ".join(l for l in locs if l)[:120],
             remote=bool(j.get("isRemote")) or j.get("workplaceType") == "Remote", posted_at=posted,
-            description=j.get("descriptionPlain") or j.get("descriptionHtml") or "",
+            description=j.get("descriptionHtml") or j.get("descriptionPlain") or "",
             tags=[j.get("department", ""), j.get("team", "")], job_type=j.get("employmentType") or "",
         ))
     return out
 
 
-async def smartrecruiters(client, company_id: str, name: str, _sem=None) -> list[dict]:
+async def _sr_description(client, company_id: str, pid: str, sem: asyncio.Semaphore) -> str:
+    key = f"sr:{company_id}:{pid}"
+    if key not in _GH_TEXT:
+        try:
+            async with sem:
+                d = await _get_json(client, f"https://api.smartrecruiters.com/v1/companies/{company_id}/postings/{pid}")
+        except Exception:
+            return ""
+        secs = (d.get("jobAd") or {}).get("sections") or {}
+        parts = []
+        for k in ("jobDescription", "qualifications", "additionalInformation", "companyDescription"):
+            sec = secs.get(k) or {}
+            if sec.get("text"):
+                parts.append(f"<h3>{sec.get('title') or ''}</h3>{sec['text']}")
+        _GH_TEXT[key] = "".join(parts)[:DESC_LIMIT * 2]
+    return _GH_TEXT[key]
+
+
+async def smartrecruiters(client, company_id: str, name: str, sem=None) -> list[dict]:
     async def fetch(country=None):
         params = {"limit": 100}
         if country:
@@ -271,6 +291,9 @@ async def smartrecruiters(client, company_id: str, name: str, _sem=None) -> list
             if j.get("id") in seen or not _recent(posted):
                 continue
             seen.add(j.get("id"))
+            if f"sr:{company_id}:{j.get('id')}" in KNOWN_JOB_IDS:
+                out.append({"id": f"sr:{company_id}:{j.get('id')}", "_reuse": True})
+                continue
             loc = j.get("location") or {}
             parts = [j.get("name", ""), (j.get("function") or {}).get("label", ""), (j.get("industry") or {}).get("label", ""),
                      (j.get("experienceLevel") or {}).get("label", ""), (j.get("department") or {}).get("label", "")]
@@ -280,40 +303,116 @@ async def smartrecruiters(client, company_id: str, name: str, _sem=None) -> list
                 title=j.get("name"), company=(j.get("company") or {}).get("name") or name,
                 location=loc.get("fullLocation") or ", ".join(x for x in (loc.get("city"), loc.get("country", "").upper()) if x),
                 remote=bool(loc.get("remote")), posted_at=posted, description=" . ".join(p for p in parts if p),
-                job_type=(j.get("typeOfEmployment") or {}).get("label", ""),
+                job_type=(j.get("typeOfEmployment") or {}).get("label", ""), _pid=j.get("id"),
             ))
+    # descriptions are a second request per job: fetch them for new jobs only, up to the limit
+    new = [d for d in out if not d.get("_reuse")][: settings.board_detail_limit]
+    if sem is not None and new:
+        texts = await asyncio.gather(*(_sr_description(client, company_id, d["_pid"], sem) for d in new))
+        for d, t in zip(new, texts):
+            if t:
+                d["text"] = strip_html(t, keep_lines=True)[:DESC_LIMIT]
+    for d in out:
+        d.pop("_pid", None)
+    return out
+
+
+# =========================================================================== Hacker News "Who is hiring?"
+_HN_LOC = re.compile(r"(?i)\b(remote|onsite|on-site|hybrid|in[- ]office)\b")
+_HN_PAY = re.compile(r"[$€£₹]\s?\d|\d+\s?k\b|\blpa\b|salary|equity", re.I)
+
+
+def _hn_job(c: dict) -> dict | None:
+    raw = c.get("comment_text") or ""
+    text = strip_html(raw, keep_lines=True)
+    first = text.split("\n", 1)[0]
+    segs = [x.strip() for x in re.split(r"\s+\|\s+|\s*\|\s*", first) if x.strip()]
+    if len(segs) < 3 or len(first) > 400:
+        return None  # not in the "Company | Role | Location" format the thread asks for
+    company = re.sub(r"\s*\(.*?\)\s*", " ", segs[0]).strip()[:80]
+    title = next((x for x in segs[1:] if title_family(x) and not _HN_LOC.fullmatch(x)), "")
+    if not company or not title:
+        return None
+    location = ", ".join(x for x in segs[1:] if x != title and (_HN_LOC.search(x) or len(x.split()) <= 4 and x[:1].isupper()
+                                                                and not _HN_PAY.search(x) and not title_family(x)))[:120]
+    salary = next((x for x in segs[1:] if _HN_PAY.search(x) and x != title), "")[:60]
+    return _job(
+        id=f"hn:{c.get('objectID')}", source="Hacker News", url=f"https://news.ycombinator.com/item?id={c.get('objectID')}",
+        title=title[:160], company=company, location=location or "See description",
+        remote=bool(re.search(r"(?i)\bremote\b", first)), posted_at=_ts(c.get("created_at_i")),
+        salary=salary, description=raw, tags=["Hacker News"],
+    )
+
+
+async def hn_hiring(client) -> list[dict]:
+    """Top-level posts from the last two monthly 'Ask HN: Who is hiring?' threads (public Algolia API)."""
+    hits = (await _get_json(client, "https://hn.algolia.com/api/v1/search_by_date",
+                            tags="story,author_whoishiring", hitsPerPage=10)).get("hits", [])
+    threads = [h["objectID"] for h in hits if "who is hiring" in (h.get("title") or "").lower()][:2]
+    out = []
+    for sid in threads:
+        page, pages = 0, 1
+        while page < min(pages, 4):
+            d = await _get_json(client, "https://hn.algolia.com/api/v1/search_by_date",
+                                tags=f"comment,story_{sid}", hitsPerPage=1000, page=page)
+            pages = d.get("nbPages", 1)
+            for c in d.get("hits", []):
+                if str(c.get("parent_id")) == str(sid) and (j := _hn_job(c)):
+                    out.append(j)
+            page += 1
     return out
 
 
 _ATS = {"greenhouse": greenhouse, "lever": lever, "ashby": ashby, "smartrecruiters": smartrecruiters}
+_ID_PREFIX = {"greenhouse": "gh", "lever": "lever", "ashby": "ashby", "smartrecruiters": "sr"}
 
 
 async def company_boards(client) -> list[dict]:
-    """All configured company boards, a few at a time. One failing board never fails the rest."""
-    sem = asyncio.Semaphore(8)        # concurrent boards
-    detail_sem = asyncio.Semaphore(8)  # concurrent greenhouse description requests
+    """All configured company boards, a few at a time. One failing board never fails the rest,
+    and a board that fails keeps the jobs it had, so a short outage doesn't empty it for an hour."""
+    sem = asyncio.Semaphore(6)        # concurrent boards
+    detail_sem = asyncio.Semaphore(6)  # concurrent description requests
 
     async def one(kind, slug, name):
         async with sem:
-            try:
-                return await _ATS[kind](client, slug, name, detail_sem)
-            except Exception as e:
-                log.info("board %s/%s failed: %r", kind, slug, e)
-                return []
+            for attempt in (1, 2):
+                try:
+                    return await _ATS[kind](client, slug, name, detail_sem)
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 429 and attempt == 1:
+                        await asyncio.sleep(10)  # rate limited: back off once, politely
+                        continue
+                    err = e
+                except Exception as e:
+                    err = e
+                break
+            log.info("board %s/%s failed: %r", kind, slug, err)
+            prefix = f"{_ID_PREFIX[kind]}:{slug}:"
+            return [{"id": i, "_reuse": True} for i in KNOWN_JOB_IDS if i.startswith(prefix)]
     results = await asyncio.gather(*(one(*b) for b in BOARDS))
     return [j for lst in results for j in lst]
 
 
 # =========================================================================== optional keyed sources
-async def jsearch(client, q: str, window: str, location: str) -> list[dict]:
-    """Google for Jobs via JSearch: LinkedIn, Indeed, Glassdoor, Naukri, company sites..."""
+def jsearch_experience(years: float | None) -> str:
+    """JSearch's own experience filter, so the portals return roles at the right level."""
+    if years is None:
+        return ""
+    if years < 1:
+        return "no_experience,under_3_years_experience"
+    return "under_3_years_experience" if years < 3 else "more_than_3_years_experience"
+
+
+async def jsearch(client, q: str, window: str, location: str, years: float | None = None) -> list[dict]:
+    """Google for Jobs via JSearch: LinkedIn, Naukri, foundit (Monster), Indeed, Glassdoor, company sites..."""
     if not settings.jsearch_key:
         return []
     where = location or settings.default_country_name
-    r = await client.get("https://jsearch.p.rapidapi.com/search", params={
-        "query": f"{q} jobs in {where}" if where else f"{q} jobs", "page": 1, "num_pages": 1,
-        "date_posted": JSEARCH_DATE.get(window, "month"), "country": settings.default_country,
-    }, headers={"X-RapidAPI-Key": settings.jsearch_key, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"})
+    params = {"query": f"{q} jobs in {where}" if where else f"{q} jobs", "page": 1, "num_pages": settings.jsearch_pages,
+              "date_posted": JSEARCH_DATE.get(window, "month"), "country": settings.default_country}
+    if jsearch_experience(years):
+        params["job_requirements"] = jsearch_experience(years)
+    r = await client.get("https://jsearch.p.rapidapi.com/search", params=params, headers={"X-RapidAPI-Key": settings.jsearch_key, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"})
     r.raise_for_status()
     out = []
     for j in r.json().get("data", []) or []:
@@ -377,15 +476,49 @@ FEEDS = {
     "Jobicy": (lambda c: jobicy(c), settings.refresh_minutes),
     "Working Nomads": (lambda c: workingnomads(c), settings.refresh_minutes),
     "Arbeitnow": (lambda c: arbeitnow(c, pages=settings.arbeitnow_pages), settings.refresh_minutes),
+    "Hacker News": (hn_hiring, 120),
 }
 
 
-def live_searches(query: str, window: str, location: str) -> dict:
+async def careerjet(client, q: str, window: str, location: str, viewer: dict | None = None) -> list[dict]:
+    """Careerjet Job Search API v4: aggregates Indian and global job sites. Free publisher key."""
+    if not settings.careerjet_key:
+        return []
+    viewer = viewer or {}
+    params = {"keywords": q, "locale_code": settings.careerjet_locale, "sort": "date", "page_size": 100,
+              "fragment_size": 600, "user_ip": viewer.get("ip") or "127.0.0.1",
+              "user_agent": viewer.get("ua") or "Mozilla/5.0"}
+    if location and location.lower() not in ("remote", "anywhere", "worldwide"):
+        params["location"] = location
+    r = await client.get("https://search.api.careerjet.net/v4/query", params=params, auth=(settings.careerjet_key, ""),
+                         headers={"Referer": (settings.site_url or "https://dreamjob.app") + "/"})
+    r.raise_for_status()
+    data = r.json()
+    cutoff = datetime.now(timezone.utc).timestamp() - WINDOW_DAYS.get(window, 31) * 86400
+    out = []
+    for j in data.get("jobs", []) if data.get("type") == "JOBS" else []:
+        posted = _ts(re.sub(r",(?=\S)", ", ", j.get("date") or ""))  # "Wed,15 Nov 2025 ..." -> "Wed, 15 Nov 2025 ..."
+        if not posted or posted < cutoff:
+            continue
+        out.append(_job(
+            id=f"careerjet:{j.get('url')}", source="Careerjet", url=j.get("url", ""), title=j.get("title"),
+            company=j.get("company"), location=j.get("locations") or "", posted_at=posted,
+            salary=j.get("salary") or "", description=j.get("description"),
+        ))
+    return out
+
+
+def live_searches(query: str, window: str, location: str, years: float | None = None, viewer: dict | None = None) -> dict:
     """Searches run at request time for the user's role. Keys are cache keys."""
     q, loc = query.strip().lower(), (location or "").strip().lower()
     searches = {f"remotive|{q}": (lambda c: remotive(c, search=query), settings.live_cache_minutes)}
-    if settings.jsearch_key:  # small free quota: cache longer and per window
-        searches[f"jsearch|{q}|{window}|{loc}"] = (lambda c: jsearch(c, query, window, location), settings.jsearch_cache_minutes)
+    if settings.jsearch_key:  # small free quota: cache longer, per window and experience band
+        band = jsearch_experience(years)
+        searches[f"jsearch|{q}|{window}|{loc}|{band}"] = (lambda c: jsearch(c, query, window, location, years),
+                                                          settings.jsearch_cache_minutes)
+    if settings.careerjet_key:
+        searches[f"careerjet|{q}|{window}|{loc}"] = (lambda c: careerjet(c, query, window, location, viewer),
+                                                     settings.live_cache_minutes)
     if settings.adzuna_app_id and settings.adzuna_app_key:
         searches[f"adzuna|{q}|{window}|{loc}"] = (lambda c: adzuna(c, query, window, location), settings.live_cache_minutes)
     if settings.jooble_key:
@@ -401,4 +534,20 @@ def enabled_sources() -> list[str]:
         names.append("Adzuna")
     if settings.jooble_key:
         names.append("Jooble")
+    if settings.careerjet_key:
+        names.append("Careerjet")
+    return names
+
+
+def live_portals() -> list[str]:
+    """Names shown while a search runs."""
+    names = []
+    if settings.jsearch_key:
+        names += ["LinkedIn", "Naukri", "Indeed", "foundit (Monster)", "Glassdoor"]
+    if settings.careerjet_key:
+        names.append("Careerjet")
+    if settings.jooble_key:
+        names.append("Jooble")
+    if settings.adzuna_app_id and settings.adzuna_app_key:
+        names.append("Adzuna")
     return names

@@ -34,13 +34,32 @@ help make ensure based across will may like get one two three time day days week
 """.split())
 
 
-def strip_html(text: str) -> str:
+_LINE_WS_RE = re.compile(r"[ \t\r\f\v ]+")
+
+
+def strip_html(text: str, keep_lines: bool = False) -> str:
+    """HTML to plain text. With keep_lines, paragraphs and bullet points survive (for display)."""
     if not text:
         return ""
-    text = re.sub(r"(?i)<\s*(br|/p|/li|/h\d|/div)\s*/?>", "\n", text)
+    if keep_lines:
+        text = re.sub(r"(?i)<\s*li[^>]*>", "\n• ", text)
+    text = re.sub(r"(?i)<\s*(br|/p|/li|/h\d|/div|/ul|/ol|/tr|/section)\s*/?>", "\n", text)
+    text = re.sub(r"(?i)<\s*(p|h\d|ul|ol|div|section)(\s[^>]*)?>", "\n", text) if keep_lines else text
     text = _TAG_RE.sub(" ", text)
     text = html.unescape(text)
-    return _WS_RE.sub(" ", text).strip()
+    if not keep_lines:
+        return _WS_RE.sub(" ", text).strip()
+    out: list[str] = []
+    for line in text.split("\n"):
+        line = _LINE_WS_RE.sub(" ", line).strip()
+        if line in ("•", "• "):
+            continue
+        if line or (out and out[-1]):
+            out.append(line)
+    # consecutive bullet points stay together; other blocks keep one blank line between them
+    out = [l for i, l in enumerate(out)
+           if l or not (0 < i < len(out) - 1 and out[i - 1].startswith("•") and out[i + 1].startswith("•"))]
+    return "\n".join(out).strip()
 
 
 def tokens(text: str) -> list[str]:
@@ -79,6 +98,7 @@ _CASE_ONLY = {("go",), ("r",), ("swift",), ("rust",), ("ruby",), ("excel",), ("j
               ("unity",), ("sketch",), ("bootstrap",), ("node",), ("german",),
               ("french",), ("spanish",)}
 ALL_SKILLS = sorted({c for v in SKILL_LOOKUP.values() for c, _ in v})
+SKILL_SET = set(ALL_SKILLS)
 
 
 def extract_skills(text: str) -> Counter:
@@ -200,10 +220,31 @@ def level_from_title(title: str) -> str | None:
         return "executive"
     if re.search(r" (lead|principal|staff|architect|manager) ", t):
         return "lead"
-    if re.search(r" (senior|sr|iii|iv) ", t):
+    if re.search(r" (senior|sr|iii|iv|v) ", t):
         return "senior"
-    if re.search(r" (junior|jr|entry|graduate|associate|fresher) ", t):
-        return "entry"
+    if re.search(r" (junior|jr|entry|graduate|grad|associate|assoc|fresher|i|level 1|l1) ", t):
+        return "entry"  # "Software Engineer I" is the first rung
+    if re.search(r" (ii|mid|intermediate|level 2|l2) ", t):
+        return "mid"
+    return None
+
+
+# Seniority stated in a job description, used only when the title and required years say nothing.
+_LEVEL_TEXT = [
+    ("intern", re.compile(r"(?i)\b(internship program(me)?|working student|werkstudent\w*|pflichtpraktikum)\b")),
+    ("entry", re.compile(r"(?i)\b(entry[- ]level|new[- ]grad(uate)?s?|recent (college |university )?graduates?|graduate (program(me)?|scheme)|"
+                         r"no (prior |previous )?(work )?experience (is )?(required|needed)|freshers?( are)? welcome|"
+                         r"berufseinsteiger\w*|erste (berufs)?erfahrung\w*|junior[- ]level|early[- ]career)\b")),
+    ("senior", re.compile(r"(?i)\b(senior[- ]level|seasoned|extensive (professional |industry |hands-on )?experience|"
+                          r"langjährige\w* (berufs)?erfahrung|significant experience leading)\b")),
+    ("mid", re.compile(r"(?i)\b(mehrjährige\w* (berufs)?erfahrung|mid[- ]level|several years of (professional )?experience)\b")),
+]
+
+
+def level_from_text(text: str) -> str | None:
+    for level, rx in _LEVEL_TEXT:
+        if rx.search(text or ""):
+            return level
     return None
 
 
@@ -263,17 +304,119 @@ def years_of_experience(text: str) -> float:
     return min(from_ranges, 45)
 
 
-_REQ_YEARS = re.compile(r"(\d{1,2})\s*\+?\s*(?:-|–|to)?\s*(?:\d{1,2})?\s*\+?\s*(?:years?|yrs?)", re.I)
+# English, German ("3 Jahre Berufserfahrung") and French ("3 ans d'expérience")
+_REQ_YEARS = re.compile(r"(\d{1,2})\s*\+?\s*(?:(?:-|–|—|to|bis|à)\s*(\d{1,2})\s*\+?\s*)?(?:years?|yrs?|jahren?|ans)\b", re.I)
+_EXP_WORDS = ("experience", "erfahrung", "expérience", "experiencia")
 
 
-def required_years(text: str) -> int | None:
-    for m in _REQ_YEARS.finditer(text):
+def required_years(text: str) -> tuple[int | None, int | None]:
+    """Years of experience a job asks for, as (minimum, maximum). '3-5 years' -> (3, 5); '4+ years' -> (4, None)."""
+    for m in _REQ_YEARS.finditer(text or ""):
         tail = text[m.end():m.end() + 60].lower()
-        if "experience" in tail or "exp" in tail[:6]:
-            v = int(m.group(1))
-            if 0 < v <= 20:
-                return v
-    return None
+        head = text[max(0, m.start() - 40):m.start()].lower()
+        if any(w in tail for w in _EXP_WORDS) or "exp" in tail[:6] or any(w in head for w in _EXP_WORDS):
+            lo = int(m.group(1))
+            hi = int(m.group(2)) if m.group(2) else None
+            if 0 < lo <= 20 and (hi is None or lo < hi <= 30):
+                return lo, hi
+    return None, None
+
+
+def canonical_skill(name: str) -> str | None:
+    """'reactjs' -> 'React' when the name is a known skill or alias, else None."""
+    cands = SKILL_LOOKUP.get(_norm_phrase(name))
+    if not cands:
+        return None
+    for canonical, exact in cands:
+        if exact is None or " ".join(tokens(name)) == exact:
+            return canonical
+    return cands[0][0]
+
+
+# --------------------------------------------------------------------------- contact details (autofill)
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_PHONE_RE = re.compile(r"(?<![\w])(\+?\d[\d\s().-]{8,16}\d)(?![\w])")
+_URL_RE = re.compile(r"(?i)\b((?:https?://)?(?:www\.)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:/[^\s,;|()<>]*)?)")
+_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z.'-]*(?:\s+[A-Za-z][A-Za-z.'-]*){1,3}$")
+
+
+def extract_contact(text: str) -> dict:
+    """Name, email, phone and profile links from a résumé. Used to pre-fill application forms."""
+    lines = [l.strip() for l in (text or "").splitlines() if l.strip()]
+    head = "\n".join(lines[:25])
+    out = {"first_name": "", "last_name": "", "email": "", "phone": "", "linkedin": "", "github": "", "website": ""}
+    for line in lines[:6]:
+        cand = re.sub(r"\s+", " ", line.split("|")[0]).strip()
+        low = cand.lower()
+        if (_NAME_RE.match(cand) and not _EMAIL_RE.search(cand) and not title_family(cand)
+                and not any(w in low for w in ("resume", "curriculum", "vitae", "profile", "summary"))):
+            parts = cand.title() if cand.isupper() else cand
+            first, *rest = parts.split(" ")
+            out["first_name"], out["last_name"] = first, " ".join(rest)
+            break
+    if m := _EMAIL_RE.search(head) or _EMAIL_RE.search(text or ""):
+        out["email"] = m.group(0)
+    for m in _PHONE_RE.finditer(head):
+        digits = re.sub(r"\D", "", m.group(1))
+        if 10 <= len(digits) <= 13 and not re.fullmatch(r"(19|20)\d{2}\D*(19|20)\d{2}", m.group(1).strip()):
+            out["phone"] = re.sub(r"\s+", " ", m.group(1)).strip()
+            break
+    for m in _URL_RE.finditer(text or ""):
+        u = m.group(1).rstrip(".")
+        low = u.lower()
+        if "@" in u or low.endswith((".pdf", ".docx")):
+            continue
+        full = u if low.startswith("http") else "https://" + u
+        if "linkedin.com/" in low and not out["linkedin"]:
+            out["linkedin"] = full
+        elif "github.com/" in low and not out["github"]:
+            out["github"] = full
+        elif not out["website"] and not any(d in low for d in ("linkedin.", "github.", "gmail.", "yahoo.", "outlook.", "hotmail.")) \
+                and ("/" in low.split("//")[-1] or low.count(".") >= 1) and len(u) > 6 and not re.match(r"^\d", u):
+            if re.search(r"(?i)portfolio|\.dev\b|\.io\b|\.me\b|vercel\.app|netlify\.app|github\.io|behance|dribbble", low):
+                out["website"] = full
+    return out
+
+
+def _clean_seg(s: str) -> str:
+    return re.sub(r"\s+", " ", s).strip(" ,|–—-:•·\t")
+
+
+def extract_history(text: str) -> tuple[list[dict], list[dict]]:
+    """Work experience and education entries (title, company, dates). Heuristic: the user reviews them."""
+    lines = [l.strip() for l in (text or "").splitlines()]
+    jobs, schools = [], []
+    now = datetime.now(timezone.utc)
+    for idx, line in enumerate(lines):
+        m = _RANGE_RE.search(line)
+        if not m:
+            continue
+        mon1 = _MONTHS.get((m.group(1) or "")[:3].lower()) or (int(m.group(2)) if m.group(2) and 0 < int(m.group(2)) <= 12 else None)
+        start = {"month": mon1, "year": int(m.group(3))}
+        if m.group(7):
+            end, current = {"month": now.month, "year": now.year}, True
+        else:
+            mon2 = _MONTHS.get((m.group(4) or "")[:3].lower()) or (int(m.group(5)) if m.group(5) and 0 < int(m.group(5)) <= 12 else None)
+            end, current = {"month": mon2, "year": int(m.group(6))}, False
+        rest = _clean_seg(line[:m.start()] + " " + line[m.end():])
+        context = [rest] if len(rest) > 2 else []
+        if idx > 0 and lines[idx - 1] and not _RANGE_RE.search(lines[idx - 1]):
+            context.append(_clean_seg(lines[idx - 1]))
+        blob = " | ".join(c for c in context if c)
+        if _EDU_RE.search(blob):
+            segs = [_clean_seg(s) for s in re.split(r"\s*(?:\||,| - | – | — )\s*", blob) if _clean_seg(s)]
+            school = next((s for s in segs if re.search(r"(?i)universit|college|school|institute|iit|nit|academy", s)), segs[0] if segs else "")
+            degree = next((s for s in segs if s != school and _EDU_RE.search(s)), "")
+            schools.append({"school": school[:120], "degree": degree[:120], "start": start, "end": end})
+            continue
+        segs = [_clean_seg(s) for s in re.split(r"\s*(?:\||,| at | @ | - | – | — )\s*", blob) if _clean_seg(s)]
+        title = next((s for s in segs if title_family(s)), "")
+        company = next((s for s in segs if s != title and not _PLACE_RE.fullmatch(s) and len(s) < 80), "")
+        location = next((s for s in segs if _PLACE_RE.search(s) and s not in (title, company)), "")
+        if title or company:
+            jobs.append({"title": title[:120], "company": company[:120], "location": location[:80],
+                         "start": start, "end": end, "current": current})
+    return jobs[:10], schools[:6]
 
 
 # --------------------------------------------------------------------------- keyword vectors

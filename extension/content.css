@@ -1,0 +1,2 @@
+/* Briefly outlines the fields DreamJob filled, so they are easy to review. */
+.dj-filled { outline: 2px solid rgba(34, 197, 94, .55) !important; outline-offset: 2px !important; border-radius: 4px; }
