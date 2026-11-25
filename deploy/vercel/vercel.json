@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    { "source": "/:path*", "destination": "https://YOUR-HF-USERNAME-dreamjob.hf.space/:path*" }
+    { "source": "/", "destination": "https://siva264842-dreamjob.hf.space/" },
+    { "source": "/:path*", "destination": "https://siva264842-dreamjob.hf.space/:path*" }
   ]
 }

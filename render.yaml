@@ -1,4 +1,4 @@
-# Render Blueprint: New > Blueprint > pick this repo.
+# Render Blueprint: dashboard.render.com > New > Blueprint > pick this repo. Leave optional keys empty if unused.
 services:
   - type: web
     name: dreamjob
@@ -12,6 +12,9 @@ services:
         value: "1"          # free plan has 512 MB RAM and 0.1 CPU
       - key: ARBEITNOW_PAGES
         value: "3"
+      # Behind the Vercel proxy (dreamjob-sepia.vercel.app): Vercel + Render's own proxy = 2 hops
+      - key: TRUSTED_PROXY_HOPS
+        value: "2"
       - key: JSEARCH_API_KEY
         sync: false
       - key: ADZUNA_APP_ID
@@ -38,7 +41,9 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: SMTP_HOST
-        sync: false
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
       - key: SMTP_USER
         sync: false
       - key: SMTP_PASSWORD
@@ -46,7 +51,7 @@ services:
       - key: SMTP_FROM
         sync: false
       - key: SITE_URL
-        sync: false
+        value: https://dreamjob-sepia.vercel.app
       - key: CONTACT_EMAIL
         sync: false
       - key: BUSINESS_NAME
