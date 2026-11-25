@@ -1,5 +1,7 @@
 """Tests for v2: descriptions, experience ranges, unlimited/custom skills, new sources, payments, pages, autofill."""
 import asyncio
+import base64
+import re
 import dataclasses
 import hashlib
 import hmac
@@ -431,3 +433,108 @@ def test_viewer_is_passed_to_live_search(client, monkeypatch):
     r = client.post("/api/analyze", data={"text": SAMPLE, "top": "3"}, headers={"User-Agent": "TestBrowser/1"})
     assert r.status_code == 200
     assert len(got["queries"]) >= 2 and got["years"] > 5 and got["viewer"]["ua"] == "TestBrowser/1"
+
+
+# ---------------------------------------------------------------------- sign-in
+@pytest.fixture
+def authed(client, monkeypatch, tmp_path):
+    from app import auth
+    s = dataclasses.replace(auth.settings, auth_secret="test-auth-secret", site_url="https://dreamjob.example",
+                            smtp_host="smtp.example", smtp_user="bot@dreamjob.example", smtp_password="pw",
+                            google_client_id="cid.apps.googleusercontent.com", google_client_secret="gsecret",
+                            data_dir=tmp_path)
+    monkeypatch.setattr(auth, "settings", s)
+    monkeypatch.setattr(main, "settings", s)
+    auth._sent.clear()
+    auth._used.clear()
+    client.base_url = httpx.URL("https://testserver")  # session cookies are Secure, as on the live HTTPS site
+    sent = []
+    monkeypatch.setattr(auth, "send_mail", lambda to, subject, text, html: sent.append((to, text)))
+    return auth, sent
+
+
+def test_email_link_sign_in_flow(client, authed):
+    auth, sent = authed
+    assert client.get("/api/auth/me").json() == {"user": None, "email": True, "google": True, "required": False}
+    r = client.post("/api/auth/email/start", json={"email": "Priya@Example.com", "next": "/pricing"})
+    assert r.status_code == 200 and sent[0][0] == "priya@example.com"
+    link = re.search(r"https://dreamjob\.example/auth/email/verify\?token=(\S+)", sent[0][1])
+    assert link, "the link must use SITE_URL"
+    token = link.group(1)
+    page = client.get("/auth/email/verify", params={"token": token})
+    assert page.status_code == 200 and "priya@example.com" in page.text and auth.SESSION_COOKIE not in page.headers.get("set-cookie", "")
+    r = client.post("/auth/email/verify", data={"token": token}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/pricing?signed_in=1"
+    assert "HttpOnly" in r.headers["set-cookie"] and "Secure" in r.headers["set-cookie"] and "SameSite=lax" in r.headers["set-cookie"]
+    me = client.get("/api/auth/me").json()["user"]
+    assert me["email"] == "priya@example.com" and me["provider"] == "email"
+    again = client.post("/auth/email/verify", data={"token": token}, follow_redirects=False)
+    assert again.headers["location"] == "/?auth_error=link_expired"          # one use only
+    client.post("/api/auth/logout")
+    client.cookies.clear()
+    assert client.get("/api/auth/me").json()["user"] is None
+
+
+def test_sign_in_rejects_tampering_redirects_and_floods(client, authed):
+    auth, sent = authed
+    tok = auth.link_token("a@b.co", "//evil.com")
+    assert auth.unsign("email-link", tok)["next"] == "/"                    # no open redirect
+    body, sig = tok.split(".")
+    assert auth.unsign("email-link", body + "x." + sig) is None
+    assert auth.unsign("session", tok) is None                              # a link is not a session
+    assert client.post("/api/auth/email/start", json={"email": "not-an-email"}).status_code == 422
+    codes = [client.post("/api/auth/email/start", json={"email": "c@d.co"}).status_code for _ in range(4)]
+    assert codes[:3] == [200, 200, 200] and codes[3] == 429
+    forged = auth.sign("session", {"email": "x@y.z", "provider": "email", "exp": time.time() - 1})
+    client.cookies.set(auth.SESSION_COOKIE, forged)
+    assert client.get("/api/auth/me").json()["user"] is None                # expired session
+
+
+def test_emailed_links_never_use_the_host_header(client, authed, monkeypatch):
+    auth, sent = authed
+    monkeypatch.setattr(auth, "settings", dataclasses.replace(auth.settings, site_url=""))
+    r = client.post("/api/auth/email/start", json={"email": "a@b.co"}, headers={"Host": "evil.com"})
+    assert r.status_code == 503 and not sent
+
+
+def test_google_sign_in_flow(client, authed, monkeypatch):
+    auth, _ = authed
+    r = client.get("/auth/google/start", params={"next": "/autofill"}, follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"].startswith("https://accounts.google.com/o/oauth2/v2/auth?")
+    from urllib.parse import urlparse, parse_qs
+    q = parse_qs(urlparse(r.headers["location"]).query)
+    assert q["redirect_uri"] == ["https://dreamjob.example/auth/google/callback"] and q["code_challenge_method"] == ["S256"]
+    state = q["state"][0]
+    claims = {"aud": "cid.apps.googleusercontent.com", "iss": "https://accounts.google.com", "exp": time.time() + 600,
+              "email": "Priya@gmail.com", "email_verified": True, "name": "Priya S", "picture": "https://lh3.googleusercontent.com/a"}
+    seg = lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
+    real = httpx.AsyncClient
+
+    def google(req):
+        assert b"code_verifier=" in req.content and b"client_secret=gsecret" in req.content
+        return httpx.Response(200, json={"id_token": f"{seg({'alg': 'RS256'})}.{seg(claims)}.sig"})
+    monkeypatch.setattr(auth.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(google), **kw))
+    ok = client.get("/auth/google/callback", params={"code": "c", "state": state}, follow_redirects=False)
+    assert ok.headers["location"] == "/autofill?signed_in=1"
+    me = client.get("/api/auth/me").json()["user"]
+    assert me == {"email": "priya@gmail.com", "name": "Priya S", "picture": "https://lh3.googleusercontent.com/a", "provider": "google"}
+    client.cookies.clear()
+    client.get("/auth/google/start", follow_redirects=False)                # a fresh attempt, answered with a forged state
+    bad = client.get("/auth/google/callback", params={"code": "c", "state": "forged"}, follow_redirects=False)
+    assert bad.headers["location"] == "/?auth_error=google_failed" and client.get("/api/auth/me").json()["user"] is None
+    claims["email_verified"] = False                                        # unverified Google emails are refused
+    r = client.get("/auth/google/start", follow_redirects=False)
+    st = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
+    assert client.get("/auth/google/callback", params={"code": "c", "state": st}, follow_redirects=False).headers["location"] == "/?auth_error=google_unverified"
+
+
+def test_auth_required_blocks_search_until_signed_in(client, authed, monkeypatch):
+    auth, _ = authed
+    s = dataclasses.replace(main.settings, auth_required=True)
+    monkeypatch.setattr(main, "settings", s)
+    monkeypatch.setattr(auth, "settings", s)
+    body = {"profile": {"titles": ["backend engineer"], "skills": ["Python"], "years": 4}, "top": 10}
+    r = client.post("/api/match", json=body)
+    assert r.status_code == 401 and "Sign in" in r.json()["error"]
+    client.cookies.set(auth.SESSION_COOKIE, auth.session_token({"email": "a@b.co", "provider": "email"}))
+    assert client.post("/api/match", json=body).status_code == 200

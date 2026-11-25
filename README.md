@@ -1,3 +1,14 @@
+---
+title: DreamJob
+emoji: ✅
+colorFrom: gray
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: true
+short_description: Upload a résumé, get the best recent jobs for it.
+---
+
 <p align="center">
   <img src="docs/assets/logo-lockup.png" alt="DreamJob" width="460">
 </p>
@@ -76,6 +87,22 @@ The `extension/` folder is a Manifest V3 extension for Chrome and Edge. The web 
 - It only fills empty fields, outlines what it filled, and **never clicks Submit, Next or consent boxes**.
 - All data stays in the browser's extension storage.
 
+## Sign-in (email and Google)
+
+Visitors can sign in with a **one-time email link** or **Continue with Google**. Both need no database and store no passwords:
+
+- **Email:** DreamJob emails a link that works once and expires in 15 minutes. Opening it shows a confirm button, so email scanners that pre-open links can't use it up.
+- **Google:** OAuth 2.0 authorization-code flow with PKCE and a state value bound to a short-lived cookie. Only verified Google emails are accepted.
+- Either way the browser gets a signed, `HttpOnly`, `SameSite=Lax` session cookie (Secure on HTTPS) valid for 30 days.
+- Sign-in is optional by default. `AUTH_REQUIRED=1` requires it before searching.
+- Signed-in users have their email filled in at checkout and when restoring Pro.
+- Emailed links always use `SITE_URL`, never the request's Host header, so links can't be pointed at another site.
+
+Setup:
+1. **Google:** in the Google Cloud Console, create an OAuth consent screen (External, scopes `openid`, `email`, `profile`) and an **OAuth client ID** of type *Web application* with the redirect URI `https://<your-site>/auth/google/callback` (and `http://localhost:8000/auth/google/callback` for local testing). Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+2. **Email:** any SMTP service works. Gmail: turn on 2-Step Verification, create an **App Password**, then set `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`, `SMTP_USER=you@gmail.com`, `SMTP_PASSWORD=<app password>`, `SMTP_FROM=DreamJob <you@gmail.com>`. Brevo's free SMTP plan also works.
+3. Set `SITE_URL` to the public address and `AUTH_SECRET` to a long random string.
+
 ## DreamJob Pro (Razorpay)
 
 Payments are off until you set Razorpay keys. When they're on, **Top 20 and Top 30** need a Pro pass (₹99 for 30 days by default, one-time, no auto-renewal). Everything else stays free.
@@ -113,7 +140,7 @@ DreamJob/
 │   └── pages/         # pricing, terms, privacy, refunds, contact, autofill (filled from settings)
 ├── static/            # index.html, styles.css, app.js, logos
 ├── extension/         # DreamJob Autofill (Chrome/Edge, Manifest V3)
-├── tests/             # pytest suite (offline, 41 tests)
+├── tests/             # pytest suite (offline, 46 tests)
 ├── scripts/           # sample résumé and a 100-user load test
 ├── docs/              # PDF guide generator and screenshots
 ├── deploy/huggingface/README.md
@@ -190,6 +217,9 @@ Everything is optional. See `.env.example` for the full list.
 | `RAZORPAY_WEBHOOK_SECRET` | empty | Verifies Razorpay webhooks (refunds revoke passes) |
 | `PASS_SECRET` | derived | Signs Pro passes |
 | `PRO_PRICE_INR`, `PRO_DAYS`, `PRO_TOPS` | `99`, `30`, `20,30` | Price, length and what Pro unlocks |
+| `AUTH_SECRET`, `AUTH_REQUIRED` | random file, off | Signs sessions and links; make sign-in mandatory |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | empty | Turn on "Continue with Google" |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | empty, `587` | Turn on email sign-in links |
 | `BUSINESS_NAME`, `CONTACT_EMAIL`, `BUSINESS_ADDRESS` | `DreamJob`, empty, empty | Shown on the policy and contact pages |
 | `JSEARCH_API_KEY` | empty | Turns on JSearch (LinkedIn, Indeed, Glassdoor, Naukri via Google for Jobs) |
 | `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `ADZUNA_COUNTRY` | empty, empty, `in` | Turns on Adzuna |
@@ -225,6 +255,10 @@ Interactive docs are served at `/api/docs`.
 | `POST` | `/api/analyze` | multipart: `file` or `text`, `window`, `top`, `location`, `remote_only` | parsed profile and ranked jobs |
 | `POST` | `/api/match` | JSON: `profile`, `window`, `top`, `location`, `remote_only` | ranked jobs |
 | `POST` | `/api/profile/extract` | multipart: `file` or `text` | contact details, work history, education, skills (for the extension) |
+| `GET` | `/api/auth/me` | – | the signed-in user (or null) and which sign-in methods are on |
+| `POST` | `/api/auth/email/start` | JSON: `email`, `next` | emails a one-time sign-in link |
+| `GET` | `/auth/google/start` | query: `next` | redirects to Google |
+| `POST` | `/api/auth/logout` | – | clears the session |
 | `POST` | `/api/pay/order` | – | a Razorpay order for DreamJob Pro |
 | `POST` | `/api/pay/verify` | JSON: `razorpay_order_id`, `razorpay_payment_id`, `razorpay_signature` | a signed Pro pass |
 | `POST` | `/api/pay/restore` | JSON: `payment_id`, `email` | the Pro pass again |

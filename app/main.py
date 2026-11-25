@@ -17,12 +17,12 @@ from typing import Literal
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
-from . import __version__, nlp, payments
+from . import __version__, auth, nlp, payments
 from .companies import BOARDS
 from .config import settings
 from .index import index
@@ -114,7 +114,7 @@ async def security_headers(request: Request, call_next):
         h.setdefault("Content-Security-Policy", CSP)
     if request.url.path.startswith("/static/"):
         h.setdefault("Cache-Control", "public, max-age=3600")
-    elif request.url.path.startswith("/api/"):
+    elif request.url.path.startswith(("/api/", "/auth/")):
         h.setdefault("Cache-Control", "no-store")
     return resp
 
@@ -177,6 +177,11 @@ class RestoreIn(BaseModel):
 
 
 # ---------------------------------------------------------------------- core
+def _require_login(request: Request):
+    if settings.auth_required and auth.enabled() and not auth.current_user(request):
+        raise HTTPException(401, "Sign in to see your matches.")
+
+
 async def _require_pro(top: int, request: Request):
     if not payments.enabled() or top not in settings.pro_tops:
         return
@@ -238,6 +243,7 @@ async def analyze(request: Request,
                   exp_match: bool = Form(True)):
     """Upload a résumé (PDF/DOCX/TXT) or paste text; returns the parsed profile and ranked jobs."""
     _check_rate(request)
+    _require_login(request)
     await _require_pro(top, request)
     resume_text = await _read_upload(file, text)
     profile = await run_in_threadpool(build_profile, resume_text)
@@ -248,6 +254,7 @@ async def analyze(request: Request,
 async def match(body: MatchIn, request: Request):
     """Re-rank with an edited profile (no re-upload needed)."""
     _check_rate(request)
+    _require_login(request)
     await _require_pro(body.top, request)
     return await _match(body.profile.to_profile(), body.window, body.top, body.location, body.remote_only, body.exp_match,
                         _viewer(request))
@@ -266,6 +273,99 @@ async def profile_extract(request: Request, file: UploadFile | None = File(None)
         return {"contact": nlp.extract_contact(resume_text), "experience": jobs, "education": schools,
                 "skills": p.skills, "titles": p.titles, "years": p.years, "location": p.location}
     return await run_in_threadpool(work)
+
+
+# ---------------------------------------------------------------------- sign-in
+class EmailStartIn(BaseModel):
+    email: str = Field(..., min_length=3, max_length=254)
+    next: str = Field("/", max_length=300)
+
+
+@app.get("/api/auth/me")
+async def auth_me(request: Request):
+    return {"user": auth.current_user(request), **auth.public_config()}
+
+
+@app.post("/api/auth/email/start")
+async def auth_email_start(body: EmailStartIn, request: Request):
+    """Emails a one-time sign-in link. The answer is the same whether or not the address has signed in before."""
+    _check_rate(request, "auth", 5)
+    if not auth.email_enabled():
+        raise HTTPException(404, "Email sign-in is not set up on this site.")
+    email = auth.normalise_email(body.email)
+    base = auth.base_url(request)
+    auth.check_send_quota(email)
+    subject, text, html_body = auth.link_email(f"{base}/auth/email/verify?token={auth.link_token(email, body.next)}")
+    try:
+        await run_in_threadpool(auth.send_mail, email, subject, text, html_body)
+    except Exception as e:
+        log.warning("sign-in email to a %s address failed: %r", email.split("@")[-1], e)
+        raise HTTPException(503, "We couldn't send the email right now. Try again in a minute.")
+    return {"ok": True, "message": f"Check your inbox. We sent a sign-in link that expires in {auth.LINK_MINUTES} minutes."}
+
+
+@app.get("/auth/email/verify", include_in_schema=False)
+async def auth_email_confirm(token: str = ""):
+    """Shows a confirm button: mail scanners that open links automatically can't use the link up."""
+    data = auth.unsign("email-link", token)
+    if not data:
+        return RedirectResponse("/?auth_error=link_expired", 303)
+    page = auth.CONFIRM_PAGE.format(name=html.escape(settings.business_name), email=html.escape(data["email"]),
+                                    token=html.escape(token))
+    return HTMLResponse(page, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+
+
+@app.post("/auth/email/verify", include_in_schema=False)
+async def auth_email_verify(request: Request, token: str = Form("")):
+    _check_rate(request, "auth-verify", 20)
+    try:
+        data = auth.consume_link(token)
+    except auth.AuthError:
+        return RedirectResponse("/?auth_error=link_expired", 303)
+    resp = RedirectResponse(auth.with_flag(data["next"], "signed_in=1"), 303)
+    auth.set_session(resp, request, {"email": data["email"], "provider": "email"})
+    return resp
+
+
+@app.get("/auth/google/start", include_in_schema=False)
+async def auth_google_start(request: Request, next: str = "/"):
+    _check_rate(request, "auth", 10)
+    try:
+        url, cookie = auth.google_start(request, next)
+    except auth.AuthError:
+        return RedirectResponse("/?auth_error=google_unavailable", 303)
+    resp = RedirectResponse(url, 302)
+    resp.set_cookie(auth.OAUTH_COOKIE, cookie, max_age=600, httponly=True, secure=auth.secure_cookies(request),
+                    samesite="lax", path="/auth/google")
+    return resp
+
+
+@app.get("/auth/google/callback", include_in_schema=False)
+async def auth_google_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    if error or not code:
+        resp = RedirectResponse("/?auth_error=google_cancelled", 303)
+    else:
+        try:
+            user, nxt = await auth.google_finish(request, code, state)
+        except auth.AuthError as e:
+            resp = RedirectResponse(f"/?auth_error={'google_unverified' if str(e) == 'google_unverified' else 'google_failed'}", 303)
+        else:
+            resp = RedirectResponse(auth.with_flag(nxt, "signed_in=1"), 303)
+            auth.set_session(resp, request, user)
+    resp.delete_cookie(auth.OAUTH_COOKIE, path="/auth/google")
+    return resp
+
+
+@app.post("/api/auth/logout")
+async def auth_logout(request: Request):
+    resp = JSONResponse({"ok": True})
+    auth.clear_session(resp, request)
+    return resp
+
+
+@app.exception_handler(auth.AuthError)
+async def auth_error(_req: Request, exc: auth.AuthError):
+    return JSONResponse({"error": str(exc)}, status_code=exc.status)
 
 
 # ---------------------------------------------------------------------- payments
@@ -309,6 +409,7 @@ async def pay_webhook(request: Request):
 @app.get("/api/config")
 async def config():
     return {"version": __version__, "payments": payments.public_config(), "live_portals": live_portals(),
+            "auth": auth.public_config(),
             "business_name": settings.business_name, "contact_email": settings.contact_email}
 
 

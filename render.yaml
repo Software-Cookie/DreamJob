@@ -31,6 +31,22 @@ services:
         sync: false
       - key: PASS_SECRET
         generateValue: true
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: SITE_URL
+        sync: false
       - key: CONTACT_EMAIL
         sync: false
       - key: BUSINESS_NAME

@@ -53,6 +53,18 @@ class Settings:
     pro_days: int = max(1, _int("PRO_DAYS", 30))
     pro_tops: frozenset = frozenset(int(x) for x in _list("PRO_TOPS", "20,30") if x.isdigit())
 
+    # Sign-in (optional). Email links need SMTP; Google needs an OAuth client. AUTH_REQUIRED=1 makes sign-in mandatory.
+    auth_secret: str = os.getenv("AUTH_SECRET", "").strip()
+    auth_required: bool = os.getenv("AUTH_REQUIRED", "").strip().lower() in ("1", "true", "yes")
+    google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+    smtp_host: str = os.getenv("SMTP_HOST", "").strip()
+    smtp_port: int = _int("SMTP_PORT", 587)
+    smtp_user: str = os.getenv("SMTP_USER", "").strip()
+    smtp_password: str = os.getenv("SMTP_PASSWORD", "").strip()
+    smtp_from: str = os.getenv("SMTP_FROM", "").strip()          # e.g. DreamJob <you@gmail.com>
+    smtp_tls: str = os.getenv("SMTP_TLS", "auto").strip().lower()  # auto (465=TLS, else STARTTLS) or none (local test servers only)
+
     # Shown on the Terms, Privacy, Refund and Contact pages (Razorpay and buyers need these).
     business_name: str = os.getenv("BUSINESS_NAME", "DreamJob")
     contact_email: str = os.getenv("CONTACT_EMAIL", "")

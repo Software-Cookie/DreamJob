@@ -413,7 +413,7 @@ table([
     ["static/", "index.html, styles.css, app.js, logos (served as files)"],
     ["app/pages/", "Pricing, terms, privacy, refunds, contact and autofill pages, filled from your business settings"],
     ["extension/", "DreamJob Autofill: manifest, fill engine (filler.js), popup, profile page, floating button"],
-    ["tests/", "41 offline tests: parsing, ranking, time windows, filters, sources, payments, pages, headers, crawler"],
+    ["tests/", "46 offline tests: parsing, ranking, time windows, filters, sources, payments, pages, headers, crawler"],
     ["scripts/load_test.py", "Simulates N users uploading at the same moment"],
     ["Dockerfile, render.yaml", "Container and Render blueprint"],
     [".github/workflows/", "ci.yml runs tests on every push; keepalive.yml pings the site"],
@@ -624,11 +624,50 @@ story.append(PageBreak())
 # =====================================================================================================
 # 6. TESTS
 # =====================================================================================================
+H1("5b. Sign-in with email and Google")
+P("Visitors can sign in with a one-time email link or with Google. Neither needs a database, and no password is ever "
+  "stored. Sign-in is optional unless <b>AUTH_REQUIRED=1</b> is set, in which case searching asks the visitor to sign in first.")
+table([
+    ["Method", "How it works", "Protection"],
+    ["Email link", "POST /api/auth/email/start emails a link that expires in 15 minutes. The link opens a confirm page; "
+                   "pressing Continue signs in.", "Signed token, one use per server worker, confirm step so mail scanners "
+                   "can't consume it, 3 emails per address per 10 minutes, link always built from SITE_URL"],
+    ["Google", "/auth/google/start redirects to Google; /auth/google/callback exchanges the code and reads the ID token.",
+               "PKCE (S256), state bound to a 10-minute HttpOnly cookie, audience and issuer checked, only verified emails"],
+    ["Session", "A signed cookie (dj_session) holding the email, name and picture for 30 days.",
+                "HttpOnly, SameSite=Lax, Secure on HTTPS, HMAC-SHA256 with AUTH_SECRET; sign out deletes it"],
+], [24 * mm, 74 * mm, 70 * mm])
+H2("Set up Google sign-in")
+steps([
+    "Open <b>console.cloud.google.com</b>, create a project (for example 'DreamJob').",
+    "<b>APIs &amp; Services → OAuth consent screen</b>: choose <b>External</b>, enter the app name, support email and your "
+    "site's home page, privacy policy (/privacy) and terms (/terms). Add the scopes <b>openid</b>, <b>email</b> and "
+    "<b>profile</b>. These basic scopes do not need Google's verification review. Click <b>Publish app</b> so anyone can sign in.",
+    "<b>Credentials → Create credentials → OAuth client ID</b>, type <b>Web application</b>. Under <b>Authorised redirect "
+    "URIs</b> add <font face='%s'>https://&lt;your-site&gt;/auth/google/callback</font> (your Vercel address if you use the "
+    "Vercel proxy) and <font face='%s'>http://localhost:8000/auth/google/callback</font> for testing." % (MONO, MONO),
+    "Copy the client ID and secret into the secrets <b>GOOGLE_CLIENT_ID</b> and <b>GOOGLE_CLIENT_SECRET</b>.",
+])
+H2("Set up email sign-in links")
+steps([
+    "Gmail (free, about 500 emails a day): turn on 2-Step Verification on the Google account, then open "
+    "<b>myaccount.google.com/apppasswords</b> and create an App Password.",
+    "Set <b>SMTP_HOST</b>=smtp.gmail.com, <b>SMTP_PORT</b>=587, <b>SMTP_USER</b>=your Gmail address, <b>SMTP_PASSWORD</b>=the "
+    "16-character App Password, and <b>SMTP_FROM</b>=DreamJob &lt;your Gmail address&gt;.",
+    "Alternative: Brevo's free plan (300 emails a day) gives SMTP settings under SMTP &amp; API; use them the same way.",
+    "Set <b>SITE_URL</b> to the public address (links are always built from it) and <b>AUTH_SECRET</b> to a long random "
+    "string (python -c \"import secrets;print(secrets.token_hex(32))\").",
+])
+P("Tested: 5 automated sign-in tests (email round trip, one-time links, tampered and expired tokens, open-redirect "
+  "blocking, Host-header protection, Google flow with forged state and unverified email, AUTH_REQUIRED) and a browser "
+  "test of the sign-in window, a real email delivered to a local mail server, the confirm page, the account menu and sign-out.")
+story.append(PageBreak())
+
 H1("6. Quality, speed and capacity: test results")
 P("Version 2.0 measured on 25 November 2026 on a Windows laptop, against the real job sources, in Microsoft Edge.")
 table([
     ["Check", "Result"],
-    ["Automated tests (pytest)", "41 passed (also run by GitHub Actions on every push)"],
+    ["Automated tests (pytest)", "46 passed (also run by GitHub Actions on every push)"],
     ["Jobs indexed after a full refresh", "8,890 (company career sites 7,594 from 186 boards; job boards 1,296 incl. 307 from Hacker News)"],
     ["Jobs per window", "24 h: 1,230   48 h: 2,145   72 h: 2,609   1 week: 4,242   1 month: 8,846"],
     ["First full crawl of company sites", "3 minutes (182 s), including full descriptions; later refreshes only download new jobs"],

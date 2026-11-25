@@ -28,6 +28,8 @@
     config: { payments: { enabled: false, pro_tops: [] } },
     pass: null,       // { token, expires_at } once DreamJob Pro is bought
     pendingTop: null, // the Top N the user picked before being asked to upgrade
+    user: null,       // signed-in account, if any
+    auth: { email: false, google: false, required: false },
   };
   if (!WINDOWS[state.prefs.window]) state.prefs.window = DEFAULTS.window;
   if (!["3", "10", "20", "30"].includes(String(state.prefs.top))) state.prefs.top = DEFAULTS.top;
@@ -170,6 +172,7 @@
         description: `DreamJob Pro, ${pay().days} days`,
         image: location.origin + "/static/logo-512.png",
         theme: { color: "#111827" },
+        prefill: state.user ? { email: state.user.email, name: state.user.name || "" } : {},
         modal: { confirm_close: true, ondismiss: done },
         handler: async (resp) => {
           btn.textContent = "Confirming payment…";
@@ -197,6 +200,7 @@
   $("restoreToggle").addEventListener("click", (e) => {
     const f = $("restoreForm");
     f.hidden = !f.hidden;
+    if (state.user && !$("restoreEmail").value) $("restoreEmail").value = state.user.email;
     e.currentTarget.setAttribute("aria-expanded", String(!f.hidden));
     if (!f.hidden) $("restoreId").focus();
   });
@@ -235,6 +239,112 @@
     openPro(err.message);
     return true;
   }
+
+  // ------------------------------------------------------------------ sign in
+  const AUTH_ERRORS = {
+    link_expired: "That sign-in link has expired or was already used. Request a new one.",
+    google_cancelled: "Google sign-in was cancelled.",
+    google_failed: "Google sign-in didn't complete. Please try again.",
+    google_unverified: "Your Google account's email address isn't verified. Use email sign-in instead.",
+    google_unavailable: "Google sign-in isn't available right now. Use email sign-in instead.",
+  };
+
+  function renderAuth() {
+    const any = state.auth.email || state.auth.google;
+    const u = state.user;
+    $("signInBtn").hidden = !any || !!u;
+    $("account").hidden = !u;
+    if (u) {
+      const label = (u.name || u.email).trim();
+      const btn = $("accountBtn");
+      btn.textContent = "";
+      if (u.picture && /^https:\/\//.test(u.picture)) {
+        const img = document.createElement("img");
+        img.src = u.picture; img.alt = ""; img.referrerPolicy = "no-referrer";
+        img.onerror = () => { btn.textContent = label.charAt(0).toUpperCase(); };
+        btn.appendChild(img);
+      } else {
+        btn.textContent = label.charAt(0).toUpperCase();
+      }
+      $("accountName").textContent = u.name || "Signed in";
+      $("accountEmail").textContent = u.email;
+    }
+    $("googleBtn").hidden = !state.auth.google;
+    $("emailForm").hidden = !state.auth.email;
+    $("authOr").hidden = !(state.auth.google && state.auth.email);
+  }
+
+  function openAuth(reason) {
+    if (!(state.auth.email || state.auth.google)) return;
+    $("authStart").hidden = false;
+    $("authSent").hidden = true;
+    hideError("authError");
+    $("authLead").textContent = reason || "Save time on every search. No password needed.";
+    const next = location.pathname + location.search;
+    $("googleBtn").href = "/auth/google/start?next=" + encodeURIComponent(next);
+    const d = $("authDialog");
+    if (!d.open) d.showModal();
+  }
+
+  async function loadAuth() {
+    try {
+      const me = await api("/api/auth/me");
+      state.user = me.user;
+      state.auth = { email: !!me.email, google: !!me.google, required: !!me.required };
+    } catch { /* sign-in stays hidden */ }
+    renderAuth();
+    const params = new URLSearchParams(location.search);
+    const err = params.get("auth_error");
+    if (params.get("signed_in") && state.user) toast(`Signed in as ${state.user.email}`);
+    if (err) { openAuth(); showError("authError", AUTH_ERRORS[err] || "Sign-in didn't complete. Please try again."); }
+    if (params.has("signed_in") || err) {
+      params.delete("signed_in"); params.delete("auth_error");
+      history.replaceState(null, "", location.pathname + (params.toString() ? "?" + params : "") + location.hash);
+    }
+  }
+
+  $("signInBtn").addEventListener("click", () => openAuth());
+  $("authDialog").addEventListener("click", (e) => { if (e.target === $("authDialog")) $("authDialog").close(); });
+  $("authBack").addEventListener("click", () => { $("authSent").hidden = true; $("authStart").hidden = false; $("authEmail").focus(); });
+  $("emailForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    hideError("authError");
+    const email = $("authEmail").value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return showError("authError", "Enter a valid email address.");
+    const btn = $("emailBtn");
+    btn.disabled = true;
+    btn.textContent = "Sending…";
+    try {
+      const r = await api("/api/auth/email/start", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, next: location.pathname }),
+      });
+      $("authSentText").textContent = `${r.message} It was sent to ${email}.`;
+      $("authStart").hidden = true;
+      $("authSent").hidden = false;
+    } catch (err) {
+      showError("authError", err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Email me a sign-in link";
+    }
+  });
+
+  const menu = $("accountMenu");
+  $("accountBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    menu.hidden = !menu.hidden;
+    $("accountBtn").setAttribute("aria-expanded", String(!menu.hidden));
+  });
+  document.addEventListener("click", (e) => { if (!menu.hidden && !menu.contains(e.target)) { menu.hidden = true; $("accountBtn").setAttribute("aria-expanded", "false"); } });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !menu.hidden) { menu.hidden = true; $("accountBtn").focus(); } });
+  $("signOutBtn").addEventListener("click", async () => {
+    try { await api("/api/auth/logout", { method: "POST" }); } catch { /* cookie may already be gone */ }
+    state.user = null;
+    menu.hidden = true;
+    renderAuth();
+    toast("You're signed out.");
+  });
 
   // ------------------------------------------------------------------ filters (rendered on both pages)
   function mountFilters(container, prefix) {
@@ -359,6 +469,7 @@
     e.preventDefault();
     const text = $("pasteText").value.trim();
     // pasted text wins when the text box is open (or when no file was chosen)
+    if (state.auth.required && !state.user) { openAuth("Sign in to see your matches. It takes a few seconds."); return; }
     const usePaste = text.length >= 80 && (!state.file || !$("pasteWrap").hidden);
     if (!state.file && !usePaste) {
       return showError("formError", text ? "Paste a bit more of your résumé (at least a few lines)." : "Add your résumé first: drop a file above or paste the text.");
@@ -392,6 +503,7 @@
     } catch (err) {
       if (err.name === "AbortError") return;
       show("search");
+      if (err.status === 401) { openAuth(err.message); return; }
       if (!handlePaywall(err)) showError("formError", err.message);
     } finally {
       stopMessages();
@@ -421,7 +533,8 @@
       renderResults(data);
     } catch (err) {
       if (err.name === "AbortError") return;
-      if (req.id === state.seq && !handlePaywall(err)) showError("resultsError", err.message);
+      if (req.id === state.seq && err.status === 401) openAuth(err.message);
+      else if (req.id === state.seq && !handlePaywall(err)) showError("resultsError", err.message);
     } finally {
       if (req.id === state.seq) {
         $("updating").hidden = true;
@@ -705,6 +818,7 @@
   mountFilters(document.querySelector('[data-filters="results"]'), "results");
   syncFilters();
   loadConfig();
+  loadAuth();
   loadStats();
   loadSkills();
 })();
